@@ -5,6 +5,7 @@ import pandas as pd
 import json
 import base64
 import io
+import re
 from core.data_context import generate_data_context
 from agents.agent import ask_llm
 from utils.tools import run_user_code
@@ -53,7 +54,7 @@ def register_callbacks(app):
             df_display.rename(columns={'index': row_id_col}, inplace=True)
             
             # Create column configuration
-            columns = _create_column_config(df_display, row_id_col)
+            columns = _create_column_config(df_display)
             
             # Convert to records - ensure no duplicate columns
             data = _prepare_table_data(df_display)
@@ -77,7 +78,7 @@ def register_callbacks(app):
          Output('last-fig-store', 'data'),
          Output('plot-area', 'figure'),
          Output('chat-info', 'children'),
-         Output('user-input', 'value')],  # Clear input after sending
+         Output('user-input', 'value')],
         [Input('send-btn', 'n_clicks'),
          Input('user-input', 'n_submit')],
         [State('user-input', 'value'),
@@ -91,7 +92,6 @@ def register_callbacks(app):
             return dash.no_update, dash.no_update, dash.no_update, dash.no_update, "Please upload a CSV file and enter a question.", dash.no_update
         
         try:
-            # Fix the deprecated pandas warning by using StringIO
             df = pd.read_json(io.StringIO(stored_data), orient='split')
             context = generate_data_context(df)
             chat_history = chat_history or []
@@ -105,8 +105,17 @@ def register_callbacks(app):
             # Process the response
             result, last_fig = _process_llm_response(bot_response, df, user_input)
             
-            # Add bot response to chat
-            chat_history.append({'role': 'bot', 'content': str(result)})
+            # Extract a human-readable answer
+            if isinstance(result, dict):
+                answer = result.get('answer')  # <-- Prefer the answer field
+                if not answer:
+                    answer = result.get('result')
+                if isinstance(answer, dict) or answer is None:
+                    answer = "I found the answer in the visualization."
+            else:
+                answer = str(result)
+
+            chat_history.append({'role': 'bot', 'content': answer})
             
             # Render chat history
             chat_render = _render_chat_history(chat_history)
@@ -114,7 +123,7 @@ def register_callbacks(app):
             # Create figure
             fig = last_fig if last_fig else px.scatter(title="No visualization available")
             
-            return chat_render, chat_history, last_fig, fig, "Ask me anything about your data!", ""  # Clear input
+            return chat_render, chat_history, last_fig, fig, "Ask me anything about your data!", ""
             
         except Exception as e:
             error_msg = f"Error processing request: {str(e)}"
@@ -123,7 +132,7 @@ def register_callbacks(app):
             chat_render = _render_chat_history(chat_history)
             return chat_render, chat_history, None, px.scatter(title="Error occurred"), "Error occurred.", ""
 
-def _create_column_config(df_display, row_id_col):
+def _create_column_config(df_display):
     """Create column configuration for the data table"""
     columns = []
     
@@ -175,84 +184,88 @@ def _prepare_table_data(df_display):
 def _process_llm_response(bot_response, df, user_input):
     """Process the LLM response and execute code"""
     try:
-        # Clean the response
-        cleaned_response = bot_response.strip()
-        if cleaned_response.startswith('```'):
-            lines = cleaned_response.split('\n')
-            if len(lines) > 1:
-                cleaned_response = '\n'.join(lines[1:])
-        if cleaned_response.endswith('```'):
-            cleaned_response = cleaned_response.rsplit('```', 1)[0]
-        cleaned_response = cleaned_response.strip()
-        
-        # Parse JSON response
+        cleaned_response = _clean_response(bot_response)
+        print("LLM raw response:", cleaned_response)
+
         try:
             tool_json = json.loads(cleaned_response)
-            tool = tool_json.get("tool")
-            code = tool_json.get("code")
+            code = tool_json.get("code", cleaned_response)
+            answer = tool_json.get("answer")  # <-- Extract answer if present
         except json.JSONDecodeError:
-            # If JSON parsing fails, treat the response as direct code
-            tool = "DataQueryTool"
             code = cleaned_response
-        
-        # Handle structured queries
-        if isinstance(code, dict):
-            code = _structured_query_to_code(code)
-        
+            answer = None
+
+        # Clean code
         if isinstance(code, str):
-            code = code.replace("data", "df")
+            code = re.sub(r'\bdata\b', 'df', code)
         
-        # Execute the code
-        result = run_user_code(code, df)
+        print("Code to execute:", code)
+
+        # Split code into lines and execute separately
+        code_lines = code.strip().split('\n')
+        local_vars = {}  # Create a dictionary to store local variables
+        result = None
         
+        # Execute each line while maintaining variable context
+        for line in code_lines:
+            if line.strip():
+                local_vars = run_user_code(line, df, local_vars)
+                if isinstance(local_vars, dict) and 'error' in local_vars:
+                    return local_vars['error'], None
+                result = local_vars  # Store the latest result
+
+        # Get the final result (prioritize 'fig' over 'result')
+        final_result = None
+        if isinstance(result, dict):
+            final_result = result.get('fig', result.get('result', result))
+        else:
+            final_result = result
+
         # Handle visualization
-        last_fig = None
-        if tool == "VisualizationTool" and isinstance(result, dict) and "fig" in result:
-            last_fig = result["fig"].to_dict()
-        elif tool == "VisualizationTool" and hasattr(result, 'to_dict'):
-            # If result is a plotly figure
-            last_fig = result.to_dict()
-        elif tool == "DataQueryTool" and _should_auto_plot(user_input, df):
-            last_fig = _create_auto_plot(user_input, df).to_dict()
-        
-        return result, last_fig
-        
+        fig = _extract_or_create_visualization(final_result, df, user_input)
+
+        # When returning the final result, include both the value, figure, and answer
+        return {'result': final_result, 'fig': fig, 'answer': answer}, fig
+
     except Exception as e:
         return f"Error processing response: {str(e)}", None
 
-def _structured_query_to_code(query):
-    """Convert structured query to executable code"""
-    if query.get("operation") == "group_by_agg":
-        group_by = query.get("group_by_cols", [])
-        agg_ops = query.get("agg_operations", {})
-        sort = query.get("sort", None)
-        limit = query.get("limit", None)
-        
-        code_lines = [f"result = df.groupby({group_by}).agg({agg_ops})"]
-        
-        if sort:
-            parts = sort.split()
-            sort_col = parts[0]
-            sort_dir = parts[1] if len(parts) > 1 else "asc"
-            ascending = "False" if sort_dir.lower() in ["desc", "descending"] else "True"
-            code_lines.append(f"result = result.sort_values('{sort_col}', ascending={ascending})")
-        
-        if limit:
-            code_lines.append(f"result = result.head({limit})")
-        
-        code_lines.append("result")
-        return "\n".join(code_lines)
-    
-    return "result = None\nresult"
+def _clean_response(response):
+    """Clean the LLM response by removing code block markers"""
+    cleaned = response.strip()
+    if cleaned.startswith('```'):
+        lines = cleaned.split('\n')
+        if len(lines) > 1:
+            cleaned = '\n'.join(lines[1:])
+    if cleaned.endswith('```'):
+        cleaned = cleaned.rsplit('```', 1)[0]
+    return cleaned.strip()
 
-def _should_auto_plot(user_input, df):
-    """Determine if we should auto-generate a plot"""
-    plot_keywords = ["plot", "chart", "graph", "visualize", "show me", "display"]
-    return any(keyword in user_input.lower() for keyword in plot_keywords)
+def _extract_or_create_visualization(result, df, user_input):
+    """Extract visualization from result or fallback to a generic empty plot."""
+    # If result is an error dict, show an error plot
+    if isinstance(result, dict) and 'error' in result:
+        return px.scatter(title="Error: " + result['error']).to_dict()
+    # If LLM returns a plotly figure (or dict), use it
+    if isinstance(result, dict):
+        for key in ('fig', 'plot', 'chart', 'result'):
+            if key in result and result[key] is not None:
+                candidate = result[key]
+                if hasattr(candidate, 'to_dict'):
+                    return candidate.to_dict()
+                elif isinstance(candidate, dict) and 'data' in candidate:
+                    return candidate
+                elif key == 'result' and hasattr(candidate, 'columns'):
+                    return _create_auto_plot(candidate).to_dict()
+    elif hasattr(result, 'to_dict'):
+        return result.to_dict()
+    elif hasattr(result, 'columns'):
+        return _create_auto_plot(result).to_dict()
+    # Fallback: show empty plot (no attempt to guess intent)
+    return px.scatter(title="No visualization available").to_dict()
 
-def _create_auto_plot(user_input, df):
-    """Create an automatic plot based on user input and data"""
-    # Simple auto-plotting logic - can be enhanced
+def _create_auto_plot(df):
+    """Create an automatic plot based on data structure"""
     numeric_cols = df.select_dtypes(include=['number']).columns
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns
     
@@ -271,25 +284,19 @@ def _create_auto_plot(user_input, df):
 def _render_chat_history(chat_history):
     """Render chat history as Dash components"""
     chat_render = []
-    for i, msg in enumerate(chat_history):
-        color = "#fff" if msg['role'] == 'user' else "#0074D9"
+    for msg in chat_history:
         role_color = "#4CAF50" if msg['role'] == 'user' else "#FF9800"
-        
-        # Truncate long messages for display
         content = str(msg['content'])
-        if len(content) > 500:
-            content = content[:500] + "..."
-        
         chat_render.append(html.Div([
-            html.B(f"{msg['role'].capitalize()}: ", 
+            html.B(f"{msg['role'].capitalize()}: ",
                   style={"color": role_color, "fontSize": "14px"}),
             html.Span(content, style={"color": "#ccc", "fontSize": "14px"})
         ], style={
-            'marginBottom': '12px', 
+            'marginBottom': '12px',
             'padding': '8px 12px',
             'borderRadius': '6px',
             'background': '#1a1e26' if msg['role'] == 'user' else '#2d3748',
             'border': f"1px solid {role_color}20"
         }))
-    
+
     return chat_render

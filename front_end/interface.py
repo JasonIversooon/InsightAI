@@ -249,7 +249,8 @@ def chat_input_component():
         type='text',
         placeholder='Ask a question...',
         style=STYLES["input"],
-        n_submit=0
+        n_submit=0,
+        value=''  # <--- Ensure the input is controlled from first render to avoid React warning
     )
 
 def chat_send_button():
