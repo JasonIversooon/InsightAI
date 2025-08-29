@@ -1,5 +1,5 @@
 import dash
-from dash import Input, Output, State, html
+from dash import Input, Output, State, html, dcc
 import plotly.express as px
 import pandas as pd
 import json
@@ -106,14 +106,32 @@ def register_callbacks(app):
             result, last_fig = _process_llm_response(bot_response, df, user_input)
             
             # Extract a human-readable answer
+            answer = "Analysis completed."  # Default answer
+            
             if isinstance(result, dict):
-                answer = result.get('answer')  # <-- Prefer the answer field
-                if not answer:
-                    answer = result.get('result')
-                if isinstance(answer, dict) or answer is None:
+                # First priority: answer from JSON response
+                if 'answer' in result and result['answer']:
+                    answer = result['answer']
+                # Second priority: result value
+                elif 'result' in result and result['result'] is not None:
+                    result_value = result['result']
+                    if hasattr(result_value, 'iloc') and len(result_value) > 0:
+                        # Handle pandas Series/DataFrame
+                        if hasattr(result_value, 'index'):
+                            answer = f"The answer is {result_value.index[0]} with value {result_value.iloc[0]}"
+                        else:
+                            answer = f"The result is: {result_value.iloc[0]}"
+                    else:
+                        answer = f"The result is: {str(result_value)}"
+                # Fallback
+                else:
                     answer = "I found the answer in the visualization."
+            elif isinstance(result, str) and not result.startswith("Error"):
+                answer = result
+            elif isinstance(result, str) and result.startswith("Error"):
+                answer = result
             else:
-                answer = str(result)
+                answer = "Analysis completed. Check the visualization for details."
 
             chat_history.append({'role': 'bot', 'content': answer})
             
@@ -131,6 +149,80 @@ def register_callbacks(app):
             chat_history.append({'role': 'bot', 'content': error_msg})
             chat_render = _render_chat_history(chat_history)
             return chat_render, chat_history, None, px.scatter(title="Error occurred"), "Error occurred.", ""
+
+    @app.callback(
+        Output('fullscreen-state', 'data'),
+        [Input('fullscreen-btn', 'n_clicks')],
+        [State('fullscreen-state', 'data')],
+        prevent_initial_call=True
+    )
+    def toggle_fullscreen_state(n_clicks, is_fullscreen):
+        """Toggle the fullscreen state"""
+        if n_clicks:
+            return not is_fullscreen
+        return is_fullscreen
+
+    @app.callback(
+        [Output('table-container', 'style'),
+         Output('fullscreen-btn', 'children'),
+         Output('fullscreen-btn', 'style')],  # Add style output
+        [Input('fullscreen-state', 'data')]
+    )
+    def update_fullscreen_layout(is_fullscreen):
+        """Update layout based on fullscreen state"""
+        if is_fullscreen:
+            # Fullscreen style
+            table_style = {
+                "position": "fixed",
+                "top": "0",
+                "left": "0",
+                "width": "100vw",
+                "height": "100vh",
+                "zIndex": "9999",
+                "background": "#181c23",
+                "padding": "20px",
+                "display": "flex",
+                "flexDirection": "column",
+                "overflow": "hidden",
+            }
+            button_text = "Exit Fullscreen"
+            # Make button more prominent in fullscreen
+            button_style = {
+                "position": "absolute",
+                "top": "20px",
+                "right": "20px",
+                "zIndex": "10000",
+                "padding": "12px 20px",
+                "background": "#ff4444",
+                "color": "#fff",
+                "border": "none",
+                "borderRadius": "6px",
+                "cursor": "pointer",
+                "fontSize": "14px",
+                "fontWeight": "bold",
+                "boxShadow": "0 2px 8px rgba(0,0,0,0.3)"
+            }
+        else:
+            # Normal sidebar style
+            table_style = {
+                "flex": "1",
+                "display": "flex", 
+                "flexDirection": "column",
+                "width": "100%",
+                "height": "calc(100vh - 200px)",
+                "marginTop": "16px",
+                "overflow": "hidden",
+            }
+            button_text = "Toggle Fullscreen"
+            # Normal button style from STYLES
+            from front_end.interface import STYLES
+            button_style = {
+                **STYLES["fullscreen_btn"],
+                "zIndex": "1000",
+                "position": "relative",
+            }
+        
+        return table_style, button_text, button_style
 
 def _create_column_config(df_display):
     """Create column configuration for the data table"""
@@ -187,19 +279,25 @@ def _process_llm_response(bot_response, df, user_input):
         cleaned_response = _clean_response(bot_response)
         print("LLM raw response:", cleaned_response)
 
+        # First, try to parse as JSON to extract code and answer
         try:
             tool_json = json.loads(cleaned_response)
-            code = tool_json.get("code", cleaned_response)
-            answer = tool_json.get("answer")  # <-- Extract answer if present
+            code = tool_json.get("code", "")
+            answer_template = tool_json.get("answer", "")
         except json.JSONDecodeError:
+            # If JSON parsing fails, treat the entire response as code
             code = cleaned_response
-            answer = None
+            answer_template = None
 
-        # Clean code
+        print("Code to execute:", code)
+
+        # Skip execution if no code is provided
+        if not code or not code.strip():
+            return "No code to execute", None
+
+        # Clean code - replace 'data' with 'df' if needed
         if isinstance(code, str):
             code = re.sub(r'\bdata\b', 'df', code)
-        
-        print("Code to execute:", code)
 
         # Split code into lines and execute separately
         code_lines = code.strip().split('\n')
@@ -216,18 +314,42 @@ def _process_llm_response(bot_response, df, user_input):
 
         # Get the final result (prioritize 'fig' over 'result')
         final_result = None
+        computed_answer = None
+        
         if isinstance(result, dict):
             final_result = result.get('fig', result.get('result', result))
+            
+            # Generate a proper answer based on actual results
+            if 'result' in result and result['result'] is not None:
+                result_value = result['result']
+                
+                # Handle different types of results
+                if isinstance(result_value, str):
+                    computed_answer = f"The answer is: {result_value}"
+                elif hasattr(result_value, 'iloc') and len(result_value) > 0:
+                    # Handle pandas Series/DataFrame
+                    if hasattr(result_value, 'index'):
+                        computed_answer = f"The answer is {result_value.index[0]} with value {result_value.iloc[0]:,.2f}" if isinstance(result_value.iloc[0], (int, float)) else f"The answer is {result_value.index[0]}"
+                    else:
+                        computed_answer = f"The result is: {result_value.iloc[0]}"
+                elif isinstance(result_value, (int, float)):
+                    computed_answer = f"The result is: {result_value:,.2f}"
+                else:
+                    computed_answer = f"The result is: {str(result_value)}"
         else:
             final_result = result
+
+        # Use computed answer if available, otherwise fall back to template
+        final_answer = computed_answer or answer_template or "Analysis completed."
 
         # Handle visualization
         fig = _extract_or_create_visualization(final_result, df, user_input)
 
-        # When returning the final result, include both the value, figure, and answer
-        return {'result': final_result, 'fig': fig, 'answer': answer}, fig
+        # Return the result with the computed answer
+        return {'result': final_result, 'fig': fig, 'answer': final_answer}, fig
 
     except Exception as e:
+        print(f"Error in _process_llm_response: {str(e)}")
         return f"Error processing response: {str(e)}", None
 
 def _clean_response(response):

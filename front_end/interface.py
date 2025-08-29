@@ -271,4 +271,5 @@ def store_components():
         dcc.Store(id='stored-data'),
         dcc.Store(id='chat-store'),
         dcc.Store(id='last-fig-store'),
+        dcc.Store(id='fullscreen-state', data=False),  # Add this line
     ], style={"display": "none"})

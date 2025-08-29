@@ -59,21 +59,24 @@ def run_user_code(code, df, local_vars=None):
     sys.stdout = captured_output = StringIO()
     
     try:
+        print(f"Executing: {code}")  # Debug print
+        
         # Try to evaluate as expression first
         try:
             result = eval(code, safe_globals, local_vars)
             if result is not None:
                 local_vars['result'] = result
+                print(f"Eval result: {type(result)} - {result}")  # Debug print
                 return local_vars
         except SyntaxError:
             # If eval fails, try exec
+            print(f"Eval failed, trying exec...")  # Debug print
             exec(code, safe_globals, local_vars)
-            # If 'fig' was created, make sure it's in the result
-            if 'fig' in local_vars:
-                return {'fig': local_vars['fig'], **local_vars}
+            print(f"Local vars after exec: {list(local_vars.keys())}")  # Debug print
             return local_vars
             
     except Exception as e:
+        print(f"Execution error: {str(e)}")  # Debug print
         return {"error": f"Execution error: {str(e)}"}
     finally:
         # Restore stdout
