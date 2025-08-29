@@ -9,6 +9,14 @@ import re
 from core.data_context import generate_data_context
 from agents.agent import ask_llm
 from utils.tools import run_user_code
+from front_end.interface import (
+    create_upload_status_message,
+    create_upload_error_message,
+    create_chat_message,
+    get_table_container_style,
+    get_fullscreen_button_style,
+    get_fullscreen_button_text
+)
 
 def register_callbacks(app):
     """Register all callbacks for the Dash app"""
@@ -59,17 +67,13 @@ def register_callbacks(app):
             # Convert to records - ensure no duplicate columns
             data = _prepare_table_data(df_display)
             
-            # Create status message
-            status_message = html.Div([
-                html.Span("Loaded: ", style={"color": "#fff"}),
-                html.Span(filename, style={"color": "#4CAF50", "fontWeight": "bold"}),
-                html.Span(f" ({len(df)} rows, {len(df.columns)} cols)", style={"color": "#bbb", "marginLeft": "4px"}),
-            ])
+            # Create status message using interface helper
+            status_message = create_upload_status_message(filename, len(df), len(df.columns))
             
             return status_message, data, columns, df.to_json(date_format='iso', orient='split')
             
         except Exception as e:
-            error_message = html.Div(f"Error loading file: {str(e)}", style={"color": "#ff4444"})
+            error_message = create_upload_error_message(str(e))
             return error_message, [], [], None
 
     @app.callback(
@@ -135,7 +139,7 @@ def register_callbacks(app):
 
             chat_history.append({'role': 'bot', 'content': answer})
             
-            # Render chat history
+            # Render chat history using interface helper
             chat_render = _render_chat_history(chat_history)
             
             # Create figure
@@ -165,65 +169,18 @@ def register_callbacks(app):
     @app.callback(
         [Output('table-container', 'style'),
          Output('fullscreen-btn', 'children'),
-         Output('fullscreen-btn', 'style')],  # Add style output
+         Output('fullscreen-btn', 'style')],
         [Input('fullscreen-state', 'data')]
     )
     def update_fullscreen_layout(is_fullscreen):
-        """Update layout based on fullscreen state"""
-        if is_fullscreen:
-            # Fullscreen style
-            table_style = {
-                "position": "fixed",
-                "top": "0",
-                "left": "0",
-                "width": "100vw",
-                "height": "100vh",
-                "zIndex": "9999",
-                "background": "#181c23",
-                "padding": "20px",
-                "display": "flex",
-                "flexDirection": "column",
-                "overflow": "hidden",
-            }
-            button_text = "Exit Fullscreen"
-            # Make button more prominent in fullscreen
-            button_style = {
-                "position": "absolute",
-                "top": "20px",
-                "right": "20px",
-                "zIndex": "10000",
-                "padding": "12px 20px",
-                "background": "#ff4444",
-                "color": "#fff",
-                "border": "none",
-                "borderRadius": "6px",
-                "cursor": "pointer",
-                "fontSize": "14px",
-                "fontWeight": "bold",
-                "boxShadow": "0 2px 8px rgba(0,0,0,0.3)"
-            }
-        else:
-            # Normal sidebar style
-            table_style = {
-                "flex": "1",
-                "display": "flex", 
-                "flexDirection": "column",
-                "width": "100%",
-                "height": "calc(100vh - 200px)",
-                "marginTop": "16px",
-                "overflow": "hidden",
-            }
-            button_text = "Toggle Fullscreen"
-            # Normal button style from STYLES
-            from front_end.interface import STYLES
-            button_style = {
-                **STYLES["fullscreen_btn"],
-                "zIndex": "1000",
-                "position": "relative",
-            }
+        """Update layout based on fullscreen state using interface helpers"""
+        table_style = get_table_container_style(is_fullscreen)
+        button_text = get_fullscreen_button_text(is_fullscreen)
+        button_style = get_fullscreen_button_style(is_fullscreen)
         
         return table_style, button_text, button_style
 
+# Helper functions remain the same but use interface functions where appropriate
 def _create_column_config(df_display):
     """Create column configuration for the data table"""
     columns = []
@@ -404,21 +361,8 @@ def _create_auto_plot(df):
         return px.bar(title="No suitable data for automatic plotting")
 
 def _render_chat_history(chat_history):
-    """Render chat history as Dash components"""
+    """Render chat history using interface helper functions"""
     chat_render = []
     for msg in chat_history:
-        role_color = "#4CAF50" if msg['role'] == 'user' else "#FF9800"
-        content = str(msg['content'])
-        chat_render.append(html.Div([
-            html.B(f"{msg['role'].capitalize()}: ",
-                  style={"color": role_color, "fontSize": "14px"}),
-            html.Span(content, style={"color": "#ccc", "fontSize": "14px"})
-        ], style={
-            'marginBottom': '12px',
-            'padding': '8px 12px',
-            'borderRadius': '6px',
-            'background': '#1a1e26' if msg['role'] == 'user' else '#2d3748',
-            'border': f"1px solid {role_color}20"
-        }))
-
+        chat_render.append(create_chat_message(msg['role'], msg['content']))
     return chat_render

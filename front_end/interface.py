@@ -24,17 +24,6 @@ STYLES = {
         "boxSizing": "border-box",
         "overflow": "hidden",
     },
-    "sidebar": {
-        "width": "340px",
-        "background": "#20242c",
-        "padding": "24px 16px 24px 24px",
-        "display": "flex",
-        "flexDirection": "column",
-        "gap": "16px",
-        "borderRight": "1px solid #23272f",
-        "minWidth": "300px",
-        "boxSizing": "border-box",
-    },
     "main_area": {
         "flex": 1,
         "display": "flex",
@@ -183,10 +172,101 @@ STYLES = {
         "textAlign": "left",
         "height": "48px",
     },
+    # Add table container styles for fullscreen functionality
+    "table_container_normal": {
+        "flex": "1",
+        "display": "flex", 
+        "flexDirection": "column",
+        "width": "100%",
+        "height": "calc(100vh - 200px)",
+        "marginTop": "16px",
+        "overflow": "hidden",
+    },
+    "table_container_fullscreen": {
+        "position": "fixed",
+        "top": "0",
+        "left": "0",
+        "width": "100vw",
+        "height": "100vh",
+        "zIndex": "9999",
+        "background": "#181c23",
+        "padding": "20px",
+        "display": "flex",
+        "flexDirection": "column",
+        "overflow": "hidden",
+    },
+    "fullscreen_btn_normal": {
+        "marginTop": "12px",
+        "padding": "8px 12px",
+        "background": "#444",
+        "color": "#fff",
+        "border": "none",
+        "borderRadius": "4px",
+        "cursor": "pointer",
+        "zIndex": "1000",
+        "position": "relative",
+    },
+    "fullscreen_btn_fullscreen": {
+        "position": "absolute",
+        "top": "20px",
+        "right": "20px",
+        "zIndex": "10000",
+        "padding": "12px 20px",
+        "background": "#ff4444",
+        "color": "#fff",
+        "border": "none",
+        "borderRadius": "6px",
+        "cursor": "pointer",
+        "fontSize": "14px",
+        "fontWeight": "bold",
+        "boxShadow": "0 2px 8px rgba(0,0,0,0.3)"
+    },
+    # Chat message styles
+    "chat_message_user": {
+        'marginBottom': '12px',
+        'padding': '8px 12px',
+        'borderRadius': '6px',
+        'background': '#1a1e26',
+        'border': f"1px solid #4CAF5020"
+    },
+    "chat_message_bot": {
+        'marginBottom': '12px',
+        'padding': '8px 12px',
+        'borderRadius': '6px',
+        'background': '#2d3748',
+        'border': f"1px solid #FF980020"
+    },
+    "chat_role_user": {
+        "color": "#4CAF50", 
+        "fontSize": "14px"
+    },
+    "chat_role_bot": {
+        "color": "#FF9800", 
+        "fontSize": "14px"
+    },
+    "chat_content": {
+        "color": "#ccc", 
+        "fontSize": "14px"
+    },
+    # Upload status message styles
+    "upload_status_text": {
+        "color": "#fff"
+    },
+    "upload_status_filename": {
+        "color": "#4CAF50", 
+        "fontWeight": "bold"
+    },
+    "upload_status_info": {
+        "color": "#bbb", 
+        "marginLeft": "4px"
+    },
+    "upload_error": {
+        "color": "#ff4444"
+    }
 }
 
-# ---- UI Components ----
-def upload_component():
+# ---- UI Component Creation Functions ----
+def create_upload_component():
     """Create file upload component"""
     return dcc.Upload(
         id='upload-data',
@@ -199,7 +279,7 @@ def upload_component():
         style=STYLES["file_upload_area"]
     )
 
-def data_table_component():
+def create_data_table_component():
     """Create data table component with optimized styling"""
     return dash_table.DataTable(
         id='data-table',
@@ -223,7 +303,6 @@ def data_table_component():
                 "if": {"column_type": "numeric"},
                 "textAlign": "right",
             },
-            # Remove the Row_Index specific styling for now to avoid the regex issue
         ],
         page_size=25,
         fill_width=True,
@@ -238,11 +317,11 @@ def data_table_component():
         style_as_list_view=False,
     )
 
-def chat_history_component():
+def create_chat_history_component():
     """Create chat history component"""
     return html.Div(id='chat-history', style=STYLES["chat_history"])
 
-def chat_input_component():
+def create_chat_input_component():
     """Create chat input component"""
     return dcc.Input(
         id='user-input',
@@ -250,26 +329,79 @@ def chat_input_component():
         placeholder='Ask a question...',
         style=STYLES["input"],
         n_submit=0,
-        value=''  # <--- Ensure the input is controlled from first render to avoid React warning
+        value=''
     )
 
-def chat_send_button():
+def create_chat_send_button():
     """Create send button component"""
     return html.Button('Send', id='send-btn', n_clicks=0, style=STYLES["send_btn"])
 
-def chat_info_component():
+def create_chat_info_component():
     """Create chat info component"""
     return html.Div("Ask me anything about your data!", id='chat-info', style=STYLES["chat_info"])
 
-def plot_component():
+def create_plot_component():
     """Create plot component"""
     return dcc.Graph(id='plot-area', config={"displayModeBar": False})
 
-def store_components():
+def create_store_components():
     """Create store components for state management"""
     return html.Div([
         dcc.Store(id='stored-data'),
         dcc.Store(id='chat-store'),
         dcc.Store(id='last-fig-store'),
-        dcc.Store(id='fullscreen-state', data=False),  # Add this line
+        dcc.Store(id='fullscreen-state', data=False),
     ], style={"display": "none"})
+
+def create_fullscreen_button():
+    """Create fullscreen toggle button"""
+    return html.Button(
+        "Toggle Fullscreen",
+        id="fullscreen-btn",
+        style=STYLES["fullscreen_btn_normal"]
+    )
+
+# ---- UI Helper Functions for Callbacks ----
+def create_upload_status_message(filename, row_count, col_count):
+    """Create upload status success message"""
+    return html.Div([
+        html.Span("Loaded: ", style=STYLES["upload_status_text"]),
+        html.Span(filename, style=STYLES["upload_status_filename"]),
+        html.Span(f" ({row_count} rows, {col_count} cols)", style=STYLES["upload_status_info"]),
+    ])
+
+def create_upload_error_message(error_msg):
+    """Create upload error message"""
+    return html.Div(f"Error loading file: {error_msg}", style=STYLES["upload_error"])
+
+def create_chat_message(role, content):
+    """Create a single chat message component"""
+    role_color = STYLES["chat_role_user"] if role == 'user' else STYLES["chat_role_bot"]
+    message_style = STYLES["chat_message_user"] if role == 'user' else STYLES["chat_message_bot"]
+    
+    return html.Div([
+        html.B(f"{role.capitalize()}: ", style=role_color),
+        html.Span(str(content), style=STYLES["chat_content"])
+    ], style=message_style)
+
+def get_table_container_style(is_fullscreen):
+    """Get table container style based on fullscreen state"""
+    return STYLES["table_container_fullscreen"] if is_fullscreen else STYLES["table_container_normal"]
+
+def get_fullscreen_button_style(is_fullscreen):
+    """Get fullscreen button style based on state"""
+    return STYLES["fullscreen_btn_fullscreen"] if is_fullscreen else STYLES["fullscreen_btn_normal"]
+
+def get_fullscreen_button_text(is_fullscreen):
+    """Get fullscreen button text based on state"""
+    return "Exit Fullscreen" if is_fullscreen else "Toggle Fullscreen"
+
+# Maintain backward compatibility
+upload_component = create_upload_component
+data_table_component = create_data_table_component
+chat_history_component = create_chat_history_component
+chat_input_component = create_chat_input_component
+chat_send_button = create_chat_send_button
+chat_info_component = create_chat_info_component
+plot_component = create_plot_component
+store_components = create_store_components
