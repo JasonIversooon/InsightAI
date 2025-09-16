@@ -7,13 +7,25 @@ const DataTable = ({ data, isFullscreen, onToggleFullscreen }) => {
   const rowsPerPage = isFullscreen ? 20 : 5;
 
   // Always define hooks before any return
-  const preview = data?.preview || [];
+  const memoizedRows = useMemo(() => {
+    const preview = data && data.preview ? data.preview : [];
+    return preview.map((row) => {
+      const newRow = { ...row };
+      for (const key in newRow) {
+        if (typeof newRow[key] === 'object' && newRow[key] !== null) {
+          newRow[key] = JSON.stringify(newRow[key]);
+        }
+      }
+      return newRow;
+    });
+  }, [data]);
+
   const columns = data?.columns || [];
 
   // Sorting logic
   const sortedData = useMemo(() => {
-    if (!sortConfig.key) return preview;
-    const sorted = [...preview].sort((a, b) => {
+    if (!sortConfig.key) return memoizedRows;
+    const sorted = [...memoizedRows].sort((a, b) => {
       const aVal = a[sortConfig.key];
       const bVal = b[sortConfig.key];
       if (aVal === undefined || aVal === null) return 1;
@@ -26,7 +38,7 @@ const DataTable = ({ data, isFullscreen, onToggleFullscreen }) => {
         : String(bVal).localeCompare(String(aVal));
     });
     return sorted;
-  }, [preview, sortConfig]);
+  }, [memoizedRows, sortConfig]);
 
   if (!data || !data.preview) return null;
 
@@ -116,15 +128,6 @@ const DataTable = ({ data, isFullscreen, onToggleFullscreen }) => {
             Next →
           </button>
         </div>
-      )}
-      
-      {!isFullscreen && (
-        <button 
-          className="fullscreen-toggle-btn"
-          onClick={onToggleFullscreen}
-        >
-          🔍 View Full Table
-        </button>
       )}
     </div>
   );

@@ -24,26 +24,27 @@ Data context:
 {data_context}
 
 IMPORTANT: Respond ONLY with a JSON object in this exact format:
-{{"tool": "DataQueryTool", "code": "your_python_code_here", "answer": "A general description of what you're analyzing"}}
+{{"tool": "DataQueryTool", "code": "your_python_code_here", "answer": "A concise direct answer followed by a short explanation"}}
 
 Guidelines:
 - Use 'df' to reference the DataFrame
 - For visualizations, always assign the plotly figure to a variable named 'fig'
-- For data queries, assign result to 'result' variable
+- For data queries, assign the direct answer to a variable named 'result' (string or number)
 - Use pandas (pd) and plotly.express (px) for analysis and visualization
 - **DO NOT include any import statements. All necessary libraries are already imported.**
 - Keep code concise and focused on the user's question
 - **If the user's question can be answered with a visualization, ALWAYS generate a plotly figure and assign it to 'fig'**
 - Always use proper aggregation: df.groupby('column').sum() or df.groupby('column').mean()
-- **In the "answer" field, provide a general description of what you're analyzing, NOT the specific result values**
+- **In the "answer" field, START with the direct answer (e.g., "West") and then a brief explanation**
 - When finding the "most" or "highest" value, show ALL categories in the visualization
 - Only use columns that exist in the provided data context
 
 Examples of good code patterns:
 - For "region with most sales": 
   sales_by_region = df.groupby('Region')['Sales'].sum().sort_values(ascending=False)
-  result = sales_by_region.index[0]
+  result = sales_by_region.index[0]  # e.g., 'West'
   fig = px.bar(x=sales_by_region.index, y=sales_by_region.values, title='Sales by Region')
+  # answer example: "West has the highest total sales. Bar chart shows totals by region."
 
 Previous conversation:
 {chat_history}

@@ -91,40 +91,13 @@ class DataProcessor:
         Execute the generated code with proper error handling and context management.
         """
         try:
-            # Normalize dataframe reference (replace 'data' with 'df' if needed)
             code = re.sub(r'\bdata\b(?!\w)', 'df', code)
-            
-            # Split code into lines for sequential execution
-            code_lines = [line.strip() for line in code.split('\n') if line.strip()]
-            
-            # Initialize execution context
             local_vars = self.execution_context.copy()
-            execution_result = {}
-            
-            # Execute each line
-            for i, line in enumerate(code_lines):
-                try:
-                    # Skip comments and empty lines
-                    if line.startswith('#') or not line:
-                        continue
-                    
-                    # Execute the line
-                    local_vars = run_user_code(line, df, local_vars)
-                    
-                    # Check for execution errors
-                    if isinstance(local_vars, dict) and 'error' in local_vars:
-                        return {'error': f"Error in line {i+1}: {local_vars['error']}"}
-                    
-                    execution_result = local_vars
-                    
-                except Exception as line_error:
-                    return {'error': f"Error executing line {i+1} ('{line}'): {str(line_error)}"}
-            
-            # Update execution context for future use
-            self.execution_context.update(local_vars)
-            
-            return execution_result if execution_result else {'result': 'Code executed successfully'}
-            
+            execution_result = run_user_code(code, df, local_vars)
+            if isinstance(execution_result, dict) and 'error' in execution_result:
+                return execution_result
+            self.execution_context.update(execution_result or local_vars)
+            return execution_result or {'result': 'Code executed successfully'}
         except Exception as e:
             return {'error': f"Code execution failed: {str(e)}"}
 
@@ -146,6 +119,13 @@ class DataProcessor:
         Generate a human-readable response from the execution result.
         This is completely dynamic based on the actual results.
         """
+        # If we have a concrete result value, surface it first
+        if isinstance(result, dict) and result.get('result') is not None:
+            direct = self._format_result_value(result['result'])
+            if answer_template and answer_template.strip():
+                return f"{direct}. {answer_template}"
+            return direct
+
         # Priority 1: Use answer template from LLM if available
         if answer_template and answer_template.strip():
             return answer_template
@@ -178,39 +158,38 @@ class DataProcessor:
             # Handle pandas Series (common for groupby results)
             if hasattr(result_value, 'iloc') and hasattr(result_value, 'index'):
                 if len(result_value) > 0:
-                    # For Series with named index
                     if hasattr(result_value, 'name') and result_value.name:
                         top_item = result_value.index[0]
                         top_value = result_value.iloc[0]
                         if isinstance(top_value, (int, float)):
-                            return f"The top result is '{top_item}' with a value of {top_value:,.2f}"
+                            return f"{top_item}"
                         else:
-                            return f"The top result is: {top_item}"
+                            return f"{top_item}"
                     else:
-                        return f"Top result: {result_value.iloc[0]}"
+                        return f"{result_value.iloc[0]}"
                 else:
                     return "No results found."
             
             # Handle pandas DataFrame
             elif hasattr(result_value, 'iloc') and hasattr(result_value, 'columns'):
                 if len(result_value) > 0:
-                    return f"Found {len(result_value)} results. Check the visualization for details."
+                    return f"{len(result_value)} results"
                 else:
                     return "No results found in the data."
             
             # Handle numeric values
             elif isinstance(result_value, (int, float)):
-                if isinstance(result_value, float):
-                    return f"The result is: {result_value:,.2f}"
-                else:
-                    return f"The result is: {result_value:,}"
+                return f"{result_value:,.2f}" if isinstance(result_value, float) else f"{result_value:,}"
+
+            # Handle strings directly (no 'Result:' prefix)
+            elif isinstance(result_value, str):
+                return result_value
             
-            # Handle strings and other types
+            # Fallback
             else:
-                return f"Result: {str(result_value)}"
-                
+                return str(result_value)
         except Exception:
-            return f"Analysis completed with result: {str(result_value)[:100]}"
+            return f"{str(result_value)[:100]}"
 
     def reset_context(self):
         """Reset the execution context (useful for new data uploads)."""

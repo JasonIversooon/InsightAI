@@ -98,14 +98,16 @@ async def upload_csv(file: UploadFile = File(...)):
         current_context = generate_data_context(df)
         
         # Prepare response data
-        preview_data = df.to_dict('records')
-        
+        preview_limit = 100  # keep responses small
+        preview_data = df.head(preview_limit).to_dict('records')
+
         return {
             "message": "File uploaded successfully",
             "filename": file.filename,
             "shape": df.shape,
             "columns": df.columns.tolist(),
             "preview": preview_data,
+            "preview_limit": preview_limit,
             "context": current_context
         }
         

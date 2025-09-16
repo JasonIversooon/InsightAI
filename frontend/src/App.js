@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import DataUpload from './components/DataUpload';
 import ChatInterface from './components/ChatInterface';
 import Visualization from './components/Visualization';
@@ -12,6 +12,9 @@ function App() {
   const [currentVisualization, setCurrentVisualization] = useState(null);
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+
+  const chatRef = useRef(null);
 
   const handleDataUpload = (data) => {
     setUploadedData(data);
@@ -22,6 +25,13 @@ function App() {
       }
     ]);
     setCurrentVisualization(null);
+    setShowUpload(false);
+    // Scroll to chat after upload
+    setTimeout(() => {
+      if (chatRef.current) {
+        chatRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 300);
   };
 
   const handleChatResponse = (response) => {
@@ -36,6 +46,12 @@ function App() {
     setIsLoading(isSending);
   };
 
+  // Helper to get preview data (first 3 rows)
+  const getPreviewData = (data) => {
+    if (!data || !data.preview) return [];
+    return data.preview.slice(0, 3);
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -47,27 +63,56 @@ function App() {
 
       <div className="main-content-v2">
         <div className="left-panel">
-          <DataUpload onDataUpload={handleDataUpload} />
+          {!uploadedData && (
+            <DataUpload onDataUpload={handleDataUpload} />
+          )}
           {uploadedData && (
-            <div className="data-preview-section">
-              <h4>Data Preview</h4>
+            <button
+              className="upload-btn"
+              onClick={() => setShowUpload(true)}
+              style={{ marginBottom: '1rem', width: '100%' }}
+            >
+              Change Data
+            </button>
+          )}
+          {showUpload && (
+            <DataUpload
+              onDataUpload={handleDataUpload}
+            />
+          )}
+          {/* DataFrame Preview */}
+          {uploadedData && (
+            <div className="data-preview-section" style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 600, fontSize: '1rem' }}>Data Preview</span>
+                <button
+                  className="fullscreen-toggle-btn"
+                  onClick={() => setIsTableFullscreen(true)}
+                  style={{ width: 'auto', marginLeft: '1rem', padding: '0.5rem 1rem' }}
+                >
+                  🔍 Full Screen
+                </button>
+              </div>
               <DataTable
                 data={{
                   ...uploadedData,
-                  preview: uploadedData.preview.slice(0, 5)
+                  preview: getPreviewData(uploadedData)
                 }}
                 isFullscreen={false}
                 onToggleFullscreen={() => setIsTableFullscreen(true)}
+                hideFullscreenBtn={true}
               />
             </div>
           )}
-          <ChatInterface
-            chatHistory={chatHistory}
-            onChatResponse={handleChatResponse}
-            onChatSending={handleChatSending}
-            hasData={!!uploadedData}
-            isLoading={isLoading}
-          />
+          <div ref={chatRef}>
+            <ChatInterface
+              chatHistory={chatHistory}
+              onChatResponse={handleChatResponse}
+              onChatSending={handleChatSending}
+              hasData={!!uploadedData}
+              isLoading={isLoading}
+            />
+          </div>
         </div>
         <div className="right-panel">
           <Visualization
