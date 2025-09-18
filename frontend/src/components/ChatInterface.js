@@ -1,5 +1,6 @@
 // src/components/ChatInterface.js
 import React, { useState, useRef, useEffect } from 'react';
+import '../styles/ChatInterface.css';
 import axios from 'axios';
 
 const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, isLoading }) => {
@@ -78,6 +79,7 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
         ) : (
           chatHistory.map((msg, index) => (
             <div key={index} className={`message ${msg.role}`}>
+              {/* Avatar first so we can flip order for user with CSS */}
               <div className="message-avatar">
                 {msg.role === 'user' ? '👤' : '🤖'}
               </div>

@@ -5,6 +5,46 @@ import plotly.graph_objects as go
 import sys
 from io import StringIO
 
+def _maybe_aggregate_timeseries(df: pd.DataFrame, x: str, y: str | None, color: str | None):
+    """
+    If x is datetime-like and y is numeric, sort by date and aggregate y by a sensible
+    frequency to avoid plotting raw transactions.
+    """
+    if x not in df.columns or not y or y not in df.columns:
+        return df
+
+    df2 = df.copy()
+    # Coerce types
+    df2[x] = pd.to_datetime(df2[x], errors="coerce")
+    df2[y] = pd.to_numeric(df2[y], errors="coerce")
+    df2 = df2.dropna(subset=[x, y])
+
+    if not pd.api.types.is_datetime64_any_dtype(df2[x]):
+        # Sort by x if not datetime, still helps
+        return df2.sort_values(by=x)
+
+    # Decide frequency by span and size
+    span_days = (df2[x].max() - df2[x].min()).days if len(df2) else 0
+    if span_days >= 365:
+        freq = "MS"  # monthly start for long ranges
+    elif span_days >= 120:
+        freq = "W"   # weekly
+    else:
+        # If many rows in a short span, still aggregate daily
+        freq = "D"
+
+    group_keys = [pd.Grouper(key=x, freq=freq)]
+    if color and isinstance(color, str) and color in df2.columns:
+        group_keys.append(color)
+
+    agg = (
+        df2.groupby(group_keys, dropna=True)[y]
+        .sum()
+        .reset_index()
+        .sort_values(by=x)
+    )
+    return agg
+
 def viz(chart_type: str,
         df: pd.DataFrame,
         x: str | None = None,
@@ -41,7 +81,9 @@ def viz(chart_type: str,
         return fig
 
     if ct in ("line", "area"):
-        fig = px.line(df, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row)
+        # NEW: sort and aggregate time series to avoid zig-zags
+        df_line = _maybe_aggregate_timeseries(df, x, y, color) if x else df
+        fig = px.line(df_line, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row)
         if ct == "area":
             fig.update_traces(fill="tozeroy")
         return fig

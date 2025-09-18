@@ -1,5 +1,6 @@
 // src/components/DataTable.js
 import React, { useState, useMemo } from 'react';
+import '../styles/DataTable.css';
 
 const DataTable = ({ data, isFullscreen, onToggleFullscreen }) => {
   const [currentPage, setCurrentPage] = useState(0);

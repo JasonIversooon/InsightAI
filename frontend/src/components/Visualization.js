@@ -1,6 +1,7 @@
 // frontend/src/components/Visualization.js
 import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
+import '../styles/Visualization.css';
 
 const PALETTE = ['#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A','#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52'];
 const MAX_CUSTOM_LEGEND_ITEMS = 20; // guardrail
@@ -22,22 +23,11 @@ const Visualization = ({ visualization, isLoading }) => {
     if (!visualization || !Array.isArray(visualization.data) || visualization.data.length === 0) {
       return { processedData: null, legend: [], shouldShowPlotlyLegend: false };
     }
-
-    // Prefer a visible trace (not "legendonly")
     const primary = getFirstVisibleTrace(visualization.data) || visualization.data[0];
-
-    // Helper
     const isArray = a => Array.isArray(a) && a.length > 0;
 
-    // Custom legend for single-trace bar only when:
-    // - x and y exist
-    // - item count is small
-    // - x labels are unique (avoid duplicates exploding legend)
-    if (
-      primary?.type === 'bar' &&
-      isArray(primary.x) &&
-      isArray(primary.y)
-    ) {
+    // Bar: keep existing behavior
+    if (primary?.type === 'bar' && isArray(primary.x) && isArray(primary.y)) {
       const labels = primary.x.map(String);
       const unique = new Set(labels);
       const small = labels.length <= MAX_CUSTOM_LEGEND_ITEMS;
@@ -59,7 +49,6 @@ const Visualization = ({ visualization, isLoading }) => {
           color: colors[i]
         }));
 
-        // Rebuild data with our modified primary trace
         const idx = visualization.data.indexOf(primary);
         const rebuilt = [
           ...visualization.data.slice(0, idx),
@@ -73,38 +62,56 @@ const Visualization = ({ visualization, isLoading }) => {
       return { processedData: visualization.data, legend: [], shouldShowPlotlyLegend: true };
     }
 
-    // Custom legend for pie only when slice count is small
+    // Pie: ALWAYS render custom legend with values (and %), hide Plotly legend
     if (primary?.type === 'pie' && isArray(primary.labels) && isArray(primary.values)) {
       const labels = primary.labels.map(String);
-      if (labels.length <= MAX_CUSTOM_LEGEND_ITEMS) {
-        const colors = Array.isArray(primary?.marker?.colors)
-          ? primary.marker.colors
-          : labels.map((_, i) => PALETTE[i % PALETTE.length]);
+      const values = primary.values.map(v => Number(v));
 
-        const newTrace = {
-          ...primary,
-          marker: { ...(primary.marker || {}), colors }
-        };
+      // Aggregate duplicates for safety (in case backend didn't)
+      const aggMap = new Map();
+      labels.forEach((lab, i) => {
+        const val = Number(values[i]);
+        aggMap.set(lab, (aggMap.get(lab) || 0) + (isFinite(val) ? val : 0));
+      });
+      const aggEntries = Array.from(aggMap.entries());
+      // Preserve first-seen order
+      const uniqueLabels = [];
+      const uniqueValues = [];
+      aggEntries.forEach(([lab, val]) => {
+        uniqueLabels.push(lab);
+        uniqueValues.push(val);
+      });
 
-        const legend = labels.map((label, i) => ({
-          label,
-          value: primary.values[i],
-          color: colors[i]
-        }));
+      const total = uniqueValues.reduce((a, b) => a + (isFinite(b) ? b : 0), 0);
+      const limit = Math.min(uniqueLabels.length, MAX_CUSTOM_LEGEND_ITEMS);
 
-        const idx = visualization.data.indexOf(primary);
-        const rebuilt = [
-          ...visualization.data.slice(0, idx),
-          newTrace,
-          ...visualization.data.slice(idx + 1),
-        ];
+      const colors = uniqueLabels.map((_, i) => PALETTE[i % PALETTE.length]);
 
-        return { processedData: rebuilt, legend, shouldShowPlotlyLegend: false };
-      }
-      return { processedData: visualization.data, legend: [], shouldShowPlotlyLegend: true };
+      const newTrace = {
+        ...primary,
+        labels: uniqueLabels,
+        values: uniqueValues,
+        marker: { ...(primary.marker || {}), colors }
+      };
+
+      const legend = uniqueLabels.slice(0, limit).map((label, i) => {
+        const val = uniqueValues[i];
+        const pct = total > 0 ? (val / total) * 100 : 0;
+        return { label, value: val, percent: pct, color: colors[i] };
+      });
+
+      const idx = visualization.data.indexOf(primary);
+      const rebuilt = [
+        ...visualization.data.slice(0, idx),
+        newTrace,
+        ...visualization.data.slice(idx + 1),
+      ];
+
+      // Hide Plotly legend for pie so we can show our own with values
+      return { processedData: rebuilt, legend, shouldShowPlotlyLegend: false };
     }
 
-    // Fallback: use Plotly's native legend for other chart types or large series
+    // Fallback
     return { processedData: visualization.data, legend: [], shouldShowPlotlyLegend: true };
   }, [visualization]);
 
@@ -154,7 +161,10 @@ const Visualization = ({ visualization, isLoading }) => {
                   {legend.map((item, idx) => (
                     <li key={idx}>
                       <span className="legend-swatch" style={{ backgroundColor: item.color }} />
-                      <span>{String(item.label)}: {formatAbbrev(item.value)}</span>
+                      <span>
+                        {String(item.label)}: {formatAbbrev(item.value)}
+                        {typeof item.percent === 'number' ? ` (${item.percent.toFixed(1)}%)` : ''}
+                      </span>
                     </li>
                   ))}
                 </ul>

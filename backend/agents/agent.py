@@ -36,6 +36,8 @@ Rules:
 - If a chart is created, assign it to fig. Put the main numeric/text answer in result.
 - Do NOT import any modules. Use only pd, px, viz, and built-ins.
 - Keep code minimal, deterministic, and efficient for large datasets.
+- When plotting time series (datetime on x), sort by date and aggregate y by an appropriate frequency
+  (daily/weekly/monthly) instead of plotting raw transactions.
 
 Chart selection:
 - If Chart Preference below is not None, follow it strictly for the chart type.

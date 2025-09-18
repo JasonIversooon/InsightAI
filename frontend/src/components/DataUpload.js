@@ -1,5 +1,6 @@
 // frontend/src/components/DataUpload.js
 import React, { useState } from 'react';
+import '../styles/DataUpload.css';
 import axios from 'axios';
 
 const DataUpload = ({ onDataUpload }) => {

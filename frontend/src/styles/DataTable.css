@@ -1,0 +1,51 @@
+/* Data Table */
+.data-table-container { margin-top: 1rem; }
+
+.data-table-container.fullscreen {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: white;
+  z-index: 1000; padding: 2rem; overflow: hidden; display: flex; flex-direction: column;
+}
+
+.table-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;
+}
+.table-header h2 { color: #1e293b; font-size: 1.5rem; font-weight: 600; }
+
+.close-fullscreen-btn { background: #ef4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 500; }
+
+.table-wrapper { flex: 1; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: white; }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.data-table th {
+  background: #f8fafc; padding: 0.75rem; text-align: left; font-weight: 600; color: #374151;
+  border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 1;
+}
+.data-table td {
+  padding: 0.75rem; border-bottom: 1px solid #f1f5f9; color: #374151;
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.data-table tr:hover td { background: #f8fafc; }
+
+.table-pagination {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 1rem; padding: 0.75rem 0;
+}
+.pagination-btn {
+  background: #667eea; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px;
+  cursor: pointer; font-size: 0.875rem; transition: background 0.2s;
+}
+.pagination-btn:hover:not(:disabled) { background: #5a67d8; }
+.pagination-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+.page-info { font-size: 0.875rem; color: #64748b; }
+
+.fullscreen-toggle-btn {
+  width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; padding: 0.75rem; border-radius: 6px;
+  cursor: pointer; margin-top: 1rem; font-size: 0.875rem; color: #374151; transition: all 0.2s;
+}
+.fullscreen-toggle-btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+@media (max-width: 480px) {
+  .data-table-container.fullscreen { padding: 1rem; }
+}

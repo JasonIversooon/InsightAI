@@ -1,0 +1,27 @@
+/* Visualization */
+.visualization-container {
+  display: flex; flex-direction: column; height: 100%; padding: 1.5rem;
+}
+.visualization-header { margin-bottom: 1.5rem; }
+.visualization-header h3 {
+  font-size: 1.25rem; font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;
+}
+.visualization-header p { color: #64748b; font-size: 0.875rem; }
+
+.visualization-content { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 400px; }
+.plot-wrapper { width: 100%; height: 100%; min-height: 400px; }
+
+.visualization-loading { display: flex; flex-direction: column; align-items: center; gap: 1rem; color: #64748b; }
+
+.no-visualization { text-align: center; color: #64748b; }
+.no-viz-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
+.no-visualization h4 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #374151; }
+
+.custom-legend { margin-top: 0.75rem; }
+.custom-legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.custom-legend li { display: flex; align-items: center; gap: 0.5rem; color: #475569; font-size: 0.9rem; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.1); display: inline-block; }
+
+@media (max-width: 480px) {
+  .visualization-container { padding: 1rem; }
+}
