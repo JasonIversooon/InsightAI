@@ -20,7 +20,7 @@ const DataUpload = ({ onDataUpload }) => {
 
     try {
       console.log('Sending request to backend...');
-      const response = await axios.post('http://192.168.0.106:8001/api/upload', formData, {
+      const response = await axios.post('http://192.168.0.110:8080/api/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

@@ -6,7 +6,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
@@ -59,6 +59,40 @@ def convert_ndarrays(obj):
     if isinstance(obj, list):
         return [convert_ndarrays(i) for i in obj]
     return obj
+
+def extract_chart_hint(text: str) -> str | None:
+    """
+    Very simple keyword-based chart intent detection.
+    Returns a normalized chart type string (e.g., 'pie', 'bar', 'stacked_bar', 'line', 'area',
+    'scatter', 'histogram', 'box', 'heatmap') or None if no clear intent.
+    """
+    if not text:
+        return None
+    t = text.lower()
+
+    # Specific before generic to avoid false positives
+    if "stacked bar" in t or ("stacked" in t and "bar" in t):
+        return "stacked_bar"
+    if "donut" in t or "doughnut" in t or "ring" in t:
+        return "pie"  # we'll treat donut as pie with hole
+    if "heat map" in t or "heatmap" in t or "correlation matrix" in t or "corr matrix" in t:
+        return "heatmap"
+    if "boxplot" in t or "box plot" in t or "box" in t:
+        return "box"
+    if "histogram" in t or "hist" in t or "distribution" in t or "freq" in t:
+        return "histogram"
+    if "scatter" in t or "bubble" in t or "relationship" in t or "correlation" in t:
+        return "scatter"
+    if "area" in t:
+        return "area"
+    if "line" in t or "trend" in t or "over time" in t or "time series" in t or "timeseries" in t:
+        return "line"
+    if "pie" in t or "share" in t or "composition" in t:
+        return "pie"
+    if "bar" in t or "column" in t or "columns" in t or "compare categories" in t:
+        return "bar"
+
+    return None
 
 @app.get("/")
 async def root():
@@ -118,51 +152,38 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_with_data(request: ChatRequest):
-    """Handle chat interactions and data analysis"""
     global current_df, current_context
-    
     if current_df is None:
-        raise HTTPException(status_code=400, detail="No data uploaded. Please upload a CSV file first.")
-    
-    try:
-        # Convert Pydantic models to dict
-        chat_history = [msg.model_dump() for msg in request.chat_history]
-        
-        # Add user message
-        chat_history.append({'role': 'user', 'content': request.message})
-        
-        # Get LLM response
-        bot_response = ask_llm(request.message, current_context, chat_history)
-        
-        # Process the response
-        result, visualization = data_processor.process_llm_response(
-            bot_response, current_df, request.message
-        )
-        
-        # Generate final answer
-        if isinstance(result, dict) and 'answer' in result:
-            answer = result['answer']
-        elif isinstance(result, str):
-            answer = result
-        else:
-            answer = "Analysis completed. Check the visualization for details."
-        
-        # Add bot response to chat history
-        chat_history.append({'role': 'bot', 'content': answer})
-        
-        # Convert back to Pydantic models
-        response_history = [ChatMessage(**msg) for msg in chat_history]
-        
-        # Convert visualization (and result if needed) to be JSON serializable
-        visualization = convert_ndarrays(visualization)
+        raise HTTPException(status_code=400, detail="No dataset uploaded yet.")
 
-        return ChatResponse(
-            response=answer,
-            chat_history=response_history,
-            visualization=visualization
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing chat: {str(e)}")
+    chat_history = [msg.model_dump() for msg in request.chat_history]
+    chat_history.append({'role': 'user', 'content': request.message})
+
+    # NEW: detect chart intent from the user's message
+    chart_hint = extract_chart_hint(request.message)
+
+    # Pass chart_hint to LLM so it either obeys or auto-selects a suitable chart
+    bot_response = ask_llm(request.message, current_context, chat_history, chart_hint=chart_hint)
+
+    result, visualization = data_processor.process_llm_response(
+        bot_response, current_df, request.message
+    )
+
+    if isinstance(result, dict) and 'answer' in result:
+        answer = result['answer']
+    elif isinstance(result, str):
+        answer = result
+    else:
+        answer = "Analysis completed. Check the visualization for details."
+
+    chat_history.append({'role': 'bot', 'content': answer})
+    response_history = [ChatMessage(**msg) for msg in chat_history]
+
+    return ChatResponse(
+        response=answer,
+        chat_history=response_history,
+        visualization=convert_ndarrays(visualization)
+    )
 
 if __name__ == "__main__":
     import uvicorn

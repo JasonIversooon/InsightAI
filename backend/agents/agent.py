@@ -18,112 +18,72 @@ MODEL_NAME = "openai/gpt-oss-20b"  # Good for code generation
 logger = logging.getLogger("llm_client")
 
 SYSTEM_PROMPT = """
-You are InsightBot, an AI data analyst. Analyze the provided data and respond with executable Python code.
+You are InsightBot, an AI data analyst helping with a pandas DataFrame called df.
+Return ONLY a single JSON object:
+{{"tool": "DataQueryTool", "code": "PYTHON_CODE_THAT_RUNS", "answer": "A concise, direct answer."}}
 
-Data context:
+Rules:
+- Use df as the DataFrame variable. pandas as pd, plotly.express as px are available.
+- A helper function viz(chart_type, df, ...) is available to quickly create charts. It returns a Plotly figure.
+  Examples:
+    fig = viz('bar', df, x='Region', y='Sales', title='Sales by Region')
+    fig = viz('pie', df, values='Sales', names='Region', title='Share of Sales')
+    fig = viz('line', df, x='Date', y='Revenue', title='Revenue over Time')
+    fig = viz('histogram', df, x='Age', title='Age distribution')
+    fig = viz('box', df, x='Category', y='Price', title='Price by Category')
+    fig = viz('heatmap', df, title='Correlation heatmap')
+    fig = viz('area', df, x='Date', y='Revenue', title='Revenue (Area)')
+- If a chart is created, assign it to fig. Put the main numeric/text answer in result.
+- Do NOT import any modules. Use only pd, px, viz, and built-ins.
+- Keep code minimal, deterministic, and efficient for large datasets.
+
+Chart selection:
+- If Chart Preference below is not None, follow it strictly for the chart type.
+- Otherwise, auto-select a suitable chart:
+  - Category comparisons: bar
+  - Part-to-whole (shares): pie (or donut if requested)
+  - Trends over time: line (consider area if emphasizing cumulative or fill)
+  - Distributions: histogram (or box for spread/outliers)
+  - Relationships between two numeric variables: scatter (optionally trendline)
+  - Correlation overview of many numeric columns: heatmap
+
+DATA CONTEXT:
 {data_context}
 
-IMPORTANT: Respond ONLY with a JSON object in this exact format:
-{{"tool": "DataQueryTool", "code": "your_python_code_here", "answer": "A concise direct answer followed by a short explanation"}}
+Chart Preference: {chart_hint}
 
-Guidelines:
-- Use 'df' to reference the DataFrame
-- For visualizations, always assign the plotly figure to a variable named 'fig'
-- For data queries, assign the direct answer to a variable named 'result' (string or number)
-- Use pandas (pd) and plotly.express (px) for analysis and visualization
-- **DO NOT include any import statements. All necessary libraries are already imported.**
-- Keep code concise and focused on the user's question
-- **If the user's question can be answered with a visualization, ALWAYS generate a plotly figure and assign it to 'fig'**
-- Always use proper aggregation: df.groupby('column').sum() or df.groupby('column').mean()
-- **In the "answer" field, START with the direct answer (e.g., "West") and then a brief explanation**
-- When finding the "most" or "highest" value, show ALL categories in the visualization
-- Only use columns that exist in the provided data context
-
-Examples of good code patterns:
-- For "region with most sales": 
-  sales_by_region = df.groupby('Region')['Sales'].sum().sort_values(ascending=False)
-  result = sales_by_region.index[0]  # e.g., 'West'
-  fig = px.bar(x=sales_by_region.index, y=sales_by_region.values, title='Sales by Region')
-  # answer example: "West has the highest total sales. Bar chart shows totals by region."
-
-Previous conversation:
-{chat_history}
-
+When you answer, ensure "code" sets 'result' (a concise value or sentence) and optionally 'fig'.
 User question: "{question}"
 """
 
-async def generate_response(question: str, data_context: str, chat_history: list) -> str:
-    """
-    Generate LLM response for data analysis questions.
-    
-    Args:
-        question: User's question
-        data_context: Context about the dataset
-        chat_history: Previous conversation messages
-        
-    Returns:
-        str: LLM response
-    """
+async def generate_response(question, data_context, chat_history, chart_hint=None):
+    system_message = SYSTEM_PROMPT.format(
+        data_context=data_context or "N/A",
+        chart_hint=chart_hint or "None",
+        question=question,
+    )
+    chat_messages = [{"role": "system", "content": system_message}]
+    # You can include trimmed chat_history if needed for context
+    chat_messages += [{"role": "user", "content": question}]
+
+    chat_completion = await client.chat.completions.create(
+        messages=chat_messages,
+        model=MODEL_NAME,
+        temperature=0.1,
+        max_tokens=1500,
+        top_p=0.9,
+    )
+    return chat_completion.choices[0].message.content.strip()
+
+def ask_llm(question, data_context, chat_history, chart_hint=None) -> str:
     try:
-        # Format chat history (limit to last 8 exchanges to avoid token limits)
-        recent_history = chat_history[-8:] if len(chat_history) > 8 else chat_history
-        formatted_history = "\n".join([
-            f"{m['role']}: {m['content'][:80]}..." if len(m['content']) > 80 
-            else f"{m['role']}: {m['content']}" 
-            for m in recent_history
-        ])
-        
-        system_message = SYSTEM_PROMPT.format(
-            data_context=data_context,
-            chat_history=formatted_history,
-            question=question
-        )
-
-        chat_completion = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": question}
-            ],
-            model=MODEL_NAME,
-            temperature=0.1,
-            max_tokens=1500,
-            top_p=0.9,
-        )
-
-        return chat_completion.choices[0].message.content.strip()
-        
-    except GroqError as e:
-        logger.error(f"Groq API error: {e.__class__.__name__} - {e}")
-        return '{"tool": "DataQueryTool", "code": "# API Error", "answer": "Sorry, the AI service returned an error. Please try again."}'
-    except Exception as e:
-        logger.error(f"Unexpected error in generate_response: {e}")
-        return '{"tool": "DataQueryTool", "code": "# Unexpected Error", "answer": "An unexpected error occurred. Please try again later."}'
-
-def ask_llm(question: str, data_context: str, chat_history: list) -> str:
-    """
-    Synchronous wrapper for the async LLM call.
-    
-    Args:
-        question: User's question
-        data_context: Context about the dataset
-        chat_history: Previous conversation messages
-        
-    Returns:
-        str: LLM response
-    """
-    try:
-        # Check if we're already in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, we need to run in a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, generate_response(question, data_context, chat_history))
-                return future.result()
-        except RuntimeError:
-            # No running loop, we can use asyncio.run directly
-            return asyncio.run(generate_response(question, data_context, chat_history))
-            
-    except Exception as e:
-        logger.error(f"Error in ask_llm wrapper: {e}")
-        return '{"tool": "DataQueryTool", "code": "# Error", "answer": "Sorry, there was an error processing your request."}'
+        loop = asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                asyncio.run,
+                generate_response(question, data_context, chat_history, chart_hint),
+            )
+            return future.result()
+    except RuntimeError:
+        return asyncio.run(generate_response(question, data_context, chat_history, chart_hint))

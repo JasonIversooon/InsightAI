@@ -1,9 +1,76 @@
+import re
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import sys
-import re
 from io import StringIO
+
+def viz(chart_type: str,
+        df: pd.DataFrame,
+        x: str | None = None,
+        y: str | None = None,
+        values: str | None = None,
+        names: str | None = None,
+        color: str | None = None,
+        title: str | None = None,
+        orientation: str | None = None,
+        nbins: int | None = None,
+        marginal: str | None = None,
+        trendline: str | None = None,
+        facet_col: str | None = None,
+        facet_row: str | None = None,
+        text: str | None = None):
+    """
+    Create a Plotly figure by chart_type. Minimal, safe wrapper around plotly.express.
+    Supported chart_type: bar, stacked_bar, line, area, pie, scatter, histogram, box, heatmap.
+    """
+    ct = (chart_type or "").lower().strip()
+
+    if ct in ("pie", "donut", "doughnut"):
+        fig = px.pie(df, values=values or y, names=names or x, title=title)
+        if ct in ("donut", "doughnut"):
+            fig.update_traces(hole=0.4)
+        return fig
+
+    if ct in ("bar", "stacked_bar"):
+        fig = px.bar(df, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row, text=text)
+        if ct == "stacked_bar":
+            fig.update_layout(barmode="stack")
+        if orientation in ("h", "horizontal"):
+            fig.update_traces(orientation="h")
+        return fig
+
+    if ct in ("line", "area"):
+        fig = px.line(df, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row)
+        if ct == "area":
+            fig.update_traces(fill="tozeroy")
+        return fig
+
+    if ct in ("scatter", "bubble"):
+        fig = px.scatter(df, x=x, y=y, color=color, title=title, trendline=trendline, facet_col=facet_col, facet_row=facet_row)
+        return fig
+
+    if ct in ("hist", "histogram"):
+        fig = px.histogram(df, x=x, y=y, color=color, nbins=nbins, title=title, marginal=marginal, facet_col=facet_col, facet_row=facet_row)
+        return fig
+
+    if ct in ("box", "boxplot"):
+        fig = px.box(df, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row)
+        return fig
+
+    if ct in ("heatmap", "heat_map", "corr", "correlation"):
+        # Correlation heatmap of numeric columns
+        num_cols = df.select_dtypes(include=["number"])
+        if num_cols.shape[1] >= 2:
+            corr = num_cols.corr()
+            fig = px.imshow(corr, text_auto=True, title=title or "Correlation heatmap", color_continuous_scale="RdBu", zmin=-1, zmax=1)
+            return fig
+        else:
+            # Fallback: histogram if not enough numeric columns
+            return px.histogram(df, x=x or num_cols.columns[0] if len(num_cols.columns) else None, title=title or "Histogram")
+
+    # Default fallback
+    return px.scatter(df, x=x, y=y, color=color, title=title or "Scatter")
 
 def run_user_code(code, df, local_vars=None):
     """
@@ -48,6 +115,7 @@ def run_user_code(code, df, local_vars=None):
         "df": df,
         "px": px,
         "go": go,
+        "viz": viz,  # NEW: convenience chart builder
     }
     
     # Initialize or update local variables
