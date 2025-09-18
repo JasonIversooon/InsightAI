@@ -19,7 +19,7 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
     onChatSending(true);
 
     try {
-      const response = await axios.post('http://192.168.0.107:8080/api/chat', {
+      const response = await axios.post('http://192.168.0.106:8001/api/chat', {
         message: userMessage,
         chat_history: chatHistory
       });
