@@ -45,6 +45,26 @@ def _maybe_aggregate_timeseries(df: pd.DataFrame, x: str, y: str | None, color: 
     )
     return agg
 
+def _maybe_aggregate_categorical(df: pd.DataFrame, x: str | None, y: str | None):
+    """
+    Aggregate for categorical charts: if many rows compared to unique x, collapse via sum(y).
+    """
+    if not x or not y or x not in df.columns or y not in df.columns:
+        return df
+    # Treat as categorical if high duplication
+    unique_x = df[x].nunique(dropna=True)
+    if unique_x == 0:
+        return df
+    # Heuristic: if rows > unique_x * 5, aggregate
+    if len(df) > unique_x * 5:
+        try:
+            return (df.groupby(x, as_index=False)[y]
+                      .sum()
+                      .sort_values(by=y, ascending=False))
+        except Exception:
+            return df
+    return df
+
 def viz(chart_type: str,
         df: pd.DataFrame,
         x: str | None = None,
@@ -67,13 +87,37 @@ def viz(chart_type: str,
     ct = (chart_type or "").lower().strip()
 
     if ct in ("pie", "donut", "doughnut"):
-        fig = px.pie(df, values=values or y, names=names or x, title=title)
+        # Aggregate pie data
+        if not (values or y):
+            # try detect numeric column automatically
+            num_cols = df.select_dtypes(include="number").columns
+            if len(num_cols):
+                values = num_cols[0]
+        if not (names or x):
+            # fallback to first non-numeric col
+            cat_cols = [c for c in df.columns if df[c].dtype == 'object']
+            if len(cat_cols):
+                names = cat_cols[0]
+        if names and (values or y):
+            val_col = values or y
+            name_col = names
+            if name_col in df.columns and val_col in df.columns:
+                df2 = df.groupby(name_col, as_index=False)[val_col].sum()
+                values = val_col
+                names = name_col
+            else:
+                df2 = df
+        else:
+            df2 = df
+        fig = px.pie(df2, values=values, names=names, title=title)
         if ct in ("donut", "doughnut"):
             fig.update_traces(hole=0.4)
         return fig
 
     if ct in ("bar", "stacked_bar"):
-        fig = px.bar(df, x=x, y=y, color=color, title=title, facet_col=facet_col, facet_row=facet_row, text=text)
+        df2 = _maybe_aggregate_categorical(df, x, y)
+        fig = px.bar(df2, x=x, y=y, color=color, title=title,
+                     facet_col=facet_col, facet_row=facet_row, text=text)
         if ct == "stacked_bar":
             fig.update_layout(barmode="stack")
         if orientation in ("h", "horizontal"):

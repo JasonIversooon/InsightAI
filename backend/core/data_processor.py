@@ -1,11 +1,15 @@
 # backend/core/data_processor.py
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import json
 import re
-from typing import Tuple, Dict, Any, Optional
-from utils.tools import run_user_code
+import pandas as pd
+import plotly.express as px
+import logging
+from typing import Optional, Tuple, Dict, Any
+import traceback
+import sys
+import io
+
+logger = logging.getLogger(__name__)
 
 class DataProcessor:
     """
@@ -14,183 +18,188 @@ class DataProcessor:
     """
     
     def __init__(self):
-        self.execution_context = {}
+        self.context = {}
     
-    def process_llm_response(self, bot_response: str, df: pd.DataFrame, user_input: str) -> Tuple[Any, Optional[Dict]]:
+    def reset_context(self):
+        """Reset any stored context"""
+        self.context = {}
+    
+    def process_llm_response(self, llm_response: str, df: pd.DataFrame, user_question: str) -> Tuple[Any, Optional[Dict]]:
         """
-        Process the LLM response and execute generated code safely.
+        Process LLM response and execute code with improved error handling
         
         Args:
-            bot_response: Raw response from the LLM
+            llm_response: Raw response from the LLM
             df: The dataframe to operate on
-            user_input: Original user query
+            user_question: Original user query
             
         Returns:
             Tuple of (result, visualization_dict)
         """
         try:
-            # Clean and parse the LLM response
-            cleaned_response = self._clean_response(bot_response)
-            code, answer_template = self._parse_response(cleaned_response)
+            logger.info(f"Processing LLM response: {llm_response[:200]}...")
             
-            if not code or not code.strip():
-                return "No code was generated for your query. Please try rephrasing your question.", None
-
-            # Execute the generated code
-            execution_result = self._execute_code_safely(code, df)
+            # Parse the response to extract code
+            code, answer = self._parse_response(llm_response)
             
-            if isinstance(execution_result, dict) and 'error' in execution_result:
-                return f"Error executing analysis: {execution_result['error']}", None
+            if not code:
+                logger.warning("No code found in LLM response")
+                return {
+                    'answer': "No code was generated for your query. Please try rephrasing your question."
+                }, None
 
-            # Extract visualization and prepare response
-            visualization = self._extract_visualization(execution_result)
-            final_answer = self._generate_response(execution_result, answer_template, user_input)
-
-            return {
-                'result': execution_result.get('result') if isinstance(execution_result, dict) else execution_result,
-                'answer': final_answer,
-                'code_executed': code,
-                'visualization': visualization
-            }, visualization
-
-        except Exception as e:
-            error_msg = f"Error processing your request: {str(e)}"
-            print(f"DataProcessor error: {error_msg}")
-            return error_msg, None
-
-    def _clean_response(self, response: str) -> str:
-        """Remove markdown code block markers and clean the response."""
-        cleaned = response.strip()
-        
-        # Remove code block markers
-        if cleaned.startswith('```'):
-            lines = cleaned.split('\n')
-            # Skip the first line if it's just ```python or ```
-            if len(lines) > 1 and (lines[0] == '```' or lines[0].startswith('```')):
-                cleaned = '\n'.join(lines[1:])
-        
-        if cleaned.endswith('```'):
-            cleaned = cleaned.rsplit('```', 1)[0]
-        
-        return cleaned.strip()
-
-    def _parse_response(self, cleaned_response: str) -> Tuple[str, Optional[str]]:
-        """Parse the cleaned response to extract code and answer template."""
-        try:
-            # Try to parse as JSON first
-            tool_json = json.loads(cleaned_response)
-            code = tool_json.get("code", "")
-            answer_template = tool_json.get("answer", "")
-            return code, answer_template
-        except json.JSONDecodeError:
-            # If not JSON, treat the entire response as code
-            return cleaned_response, None
-
-    def _execute_code_safely(self, code: str, df: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Execute the generated code with proper error handling and context management.
-        """
-        try:
-            code = re.sub(r'\bdata\b(?!\w)', 'df', code)
-            local_vars = self.execution_context.copy()
-            execution_result = run_user_code(code, df, local_vars)
-            if isinstance(execution_result, dict) and 'error' in execution_result:
-                return execution_result
-            self.execution_context.update(execution_result or local_vars)
-            return execution_result or {'result': 'Code executed successfully'}
-        except Exception as e:
-            return {'error': f"Code execution failed: {str(e)}"}
-
-    def _extract_visualization(self, result: Any) -> Optional[Dict]:
-        """Extract plotly visualization from execution result."""
-        if isinstance(result, dict):
-            # Look for 'fig' variable (plotly figure)
-            fig = result.get('fig')
-            if fig and hasattr(fig, 'to_dict'):
-                try:
-                    return fig.to_dict()
-                except Exception as e:
-                    print(f"Error converting figure to dict: {e}")
-                    return None
-        return None
-
-    def _generate_response(self, result: Any, answer_template: Optional[str], user_input: str) -> str:
-        """
-        Generate a human-readable response from the execution result.
-        This is completely dynamic based on the actual results.
-        """
-        # If we have a concrete result value, surface it first
-        if isinstance(result, dict) and result.get('result') is not None:
-            direct = self._format_result_value(result['result'])
-            if answer_template and answer_template.strip():
-                return f"{direct}. {answer_template}"
-            return direct
-
-        # Priority 1: Use answer template from LLM if available
-        if answer_template and answer_template.strip():
-            return answer_template
-        
-        # Priority 2: Extract answer from result
-        if isinstance(result, dict):
-            # Check for explicit answer field
-            if 'answer' in result and result['answer']:
-                return str(result['answer'])
+            logger.info(f"Extracted code length: {len(code)}")
+            logger.info(f"Code preview: {code[:200]}...")
             
-            # Check for result field and format it appropriately
-            if 'result' in result and result['result'] is not None:
-                return self._format_result_value(result['result'])
+            # Execute the code
+            result, visualization = self._execute_code(code, df)
+            logger.info(f"Code execution completed. Result: {result}")
             
-            # Check for any meaningful output
-            for key, value in result.items():
-                if key not in ['fig', 'error', 'code_executed'] and value is not None:
-                    return self._format_result_value(value)
-        
-        # Priority 3: Format non-dict results
-        elif isinstance(result, str):
-            return result
-        
-        # Fallback
-        return "Analysis completed. Please check the visualization for insights."
-
-    def _format_result_value(self, result_value: Any) -> str:
-        """Format any result value into a human-readable string."""
-        try:
-            # Handle pandas Series (common for groupby results)
-            if hasattr(result_value, 'iloc') and hasattr(result_value, 'index'):
-                if len(result_value) > 0:
-                    if hasattr(result_value, 'name') and result_value.name:
-                        top_item = result_value.index[0]
-                        top_value = result_value.iloc[0]
-                        if isinstance(top_value, (int, float)):
-                            return f"{top_item}"
-                        else:
-                            return f"{top_item}"
-                    else:
-                        return f"{result_value.iloc[0]}"
-                else:
-                    return "No results found."
-            
-            # Handle pandas DataFrame
-            elif hasattr(result_value, 'iloc') and hasattr(result_value, 'columns'):
-                if len(result_value) > 0:
-                    return f"{len(result_value)} results"
-                else:
-                    return "No results found in the data."
-            
-            # Handle numeric values
-            elif isinstance(result_value, (int, float)):
-                return f"{result_value:,.2f}" if isinstance(result_value, float) else f"{result_value:,}"
-
-            # Handle strings directly (no 'Result:' prefix)
-            elif isinstance(result_value, str):
-                return result_value
-            
-            # Fallback
+            # Return the result with answer
+            if answer:
+                return {'answer': answer, 'result': result}, visualization
             else:
-                return str(result_value)
-        except Exception:
-            return f"{str(result_value)[:100]}"
-
-    def reset_context(self):
-        """Reset the execution context (useful for new data uploads)."""
-        self.execution_context = {}
+                return {'answer': f"Analysis completed: {result}"}, visualization
+                
+        except Exception as e:
+            logger.error(f"Error processing LLM response: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                'answer': "I encountered an error processing your request. Please try rephrasing your question."
+            }, None
+    
+    def _parse_response(self, response: str) -> Tuple[str, Optional[str]]:
+        """
+        Parse LLM response to extract code and answer
+        """
+        print(f"DEBUG: Parsing response: {response[:200]}...")
+        
+        # Clean the response
+        cleaned_response = response.strip()
+        
+        # Try to parse as JSON first
+        try:
+            # Remove any markdown code blocks
+            if "```" in cleaned_response:
+                # Extract content between first pair of triple backticks
+                start = cleaned_response.find("```")
+                end = cleaned_response.find("```", start + 3)
+                if end != -1:
+                    cleaned_response = cleaned_response[start+3:end].strip()
+                    # Remove language identifier if present
+                    if cleaned_response.startswith(('json', 'python')):
+                        lines = cleaned_response.split('\n')
+                        cleaned_response = '\n'.join(lines[1:])
+            
+            # Try direct JSON parse
+            data = json.loads(cleaned_response)
+            code = data.get("code", "")
+            answer = data.get("answer", "")
+            
+            print(f"DEBUG: Successfully parsed JSON. Code length: {len(code)}")
+            return code, answer
+            
+        except json.JSONDecodeError as e:
+            print(f"DEBUG: JSON decode failed: {e}")
+            return "", None
+    
+    def _execute_code(self, code: str, df: pd.DataFrame) -> Tuple[Any, Optional[Dict]]:
+        """
+        Execute the extracted code safely with comprehensive logging
+        """
+        try:
+            logger.info(f"Starting code execution...")
+            logger.info(f"DataFrame shape: {df.shape}")
+            logger.info(f"DataFrame columns: {df.columns.tolist()}")
+            
+            # Capture print statements
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = io.StringIO()
+            
+            # Create a safe execution environment
+            namespace = {
+                'df': df.copy(),
+                'pd': pd,
+                'px': px,
+                'viz': self._create_visualization,
+                'result': None,
+                'fig': None,
+                'print': print  # Ensure print works
+            }
+            
+            logger.info(f"Executing code: {code}")
+            
+            # Execute the code
+            exec(code, namespace)
+            
+            # Restore stdout and get captured output
+            sys.stdout = old_stdout
+            output = captured_output.getvalue()
+            
+            logger.info(f"Code execution output: {output}")
+            
+            # Get the result
+            result = namespace.get('result', 'Analysis completed')
+            fig = namespace.get('fig', None)
+            
+            logger.info(f"Result from namespace: {result}")
+            logger.info(f"Figure object: {fig is not None}")
+            
+            # Convert Plotly figure to dict if present
+            visualization = None
+            if fig is not None:
+                try:
+                    visualization = fig.to_dict()
+                    logger.info("Visualization created successfully")
+                except Exception as e:
+                    logger.error(f"Error converting visualization: {e}")
+            
+            return result, visualization
+            
+        except Exception as e:
+            # Restore stdout
+            sys.stdout = old_stdout
+            logger.error(f"Code execution failed: {e}")
+            logger.error(f"Code was: {code}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return f"Error executing code: {str(e)}", None
+    
+    def _create_visualization(self, chart_type: str, data: pd.DataFrame, **kwargs) -> Any:
+        """
+        Create visualizations using Plotly Express
+        """
+        try:
+            logger.info(f"Creating {chart_type} chart with data shape: {data.shape}")
+            logger.info(f"Chart kwargs: {kwargs}")
+            
+            chart_type = chart_type.lower()
+            
+            if chart_type == 'bar':
+                fig = px.bar(data, **kwargs)
+            elif chart_type == 'line':
+                fig = px.line(data, **kwargs)
+            elif chart_type == 'scatter':
+                fig = px.scatter(data, **kwargs)
+            elif chart_type == 'pie':
+                fig = px.pie(data, **kwargs)
+            elif chart_type == 'histogram':
+                fig = px.histogram(data, **kwargs)
+            elif chart_type == 'box':
+                fig = px.box(data, **kwargs)
+            elif chart_type == 'area':
+                fig = px.area(data, **kwargs)
+            elif chart_type == 'heatmap':
+                fig = px.imshow(data, **kwargs)
+            elif chart_type == 'stacked_bar':
+                fig = px.bar(data, **kwargs)
+            else:
+                logger.warning(f"Unknown chart type: {chart_type}, defaulting to bar")
+                fig = px.bar(data, **kwargs)
+            
+            logger.info(f"Chart created successfully")
+            return fig
+                
+        except Exception as e:
+            logger.error(f"Error creating visualization: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise

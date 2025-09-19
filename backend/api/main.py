@@ -1,6 +1,8 @@
 # backend/api/main.py
 import sys
 from pathlib import Path
+import json
+import logging
 
 # Add backend directory to Python path
 backend_dir = Path(__file__).parent.parent
@@ -18,6 +20,10 @@ import numpy as np
 from agents.agent import ask_llm
 from core.data_context import generate_data_context
 from core.data_processor import DataProcessor
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="InsightAI API", version="1.0.0")
 
@@ -38,11 +44,12 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     chat_history: List[ChatMessage] = []
+    chart_preference: str | None = None  # Add this field
 
 class ChatResponse(BaseModel):
     response: str
     chat_history: List[ChatMessage]
-    visualization: Dict[str, Any] = None
+    visualization: Dict[str, Any] | None = None
 
 # Initialize data processor
 data_processor = DataProcessor()
@@ -130,6 +137,7 @@ async def upload_csv(file: UploadFile = File(...)):
         # Store dataframe and generate context
         current_df = df
         current_context = generate_data_context(df)
+        data_processor.reset_context()
         
         # Prepare response data
         preview_limit = 100  # keep responses small
@@ -152,38 +160,66 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_with_data(request: ChatRequest):
+    """Main chat endpoint with improved error handling"""
     global current_df, current_context
-    if current_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded yet.")
+    
+    try:
+        if current_df is None:
+            raise HTTPException(status_code=400, detail="No dataset uploaded yet.")
 
-    chat_history = [msg.model_dump() for msg in request.chat_history]
-    chat_history.append({'role': 'user', 'content': request.message})
+        # Build chat history
+        chat_history = [msg.model_dump() for msg in request.chat_history]
+        chat_history.append({'role': 'user', 'content': request.message})
 
-    # NEW: detect chart intent from the user's message
-    chart_hint = extract_chart_hint(request.message)
+        # Extract chart hint from message or use preference
+        chart_hint = request.chart_preference or extract_chart_hint(request.message)
 
-    # Pass chart_hint to LLM so it either obeys or auto-selects a suitable chart
-    bot_response = ask_llm(request.message, current_context, chat_history, chart_hint=chart_hint)
+        # Get response from LLM
+        bot_response = ask_llm(request.message, current_context, chat_history, chart_hint=chart_hint)
+        
+        # Debug: Log the raw LLM response
+        logger.info(f"Raw LLM response: {bot_response}")
 
-    result, visualization = data_processor.process_llm_response(
-        bot_response, current_df, request.message
-    )
+        # Process the LLM response
+        result, visualization = data_processor.process_llm_response(
+            bot_response, current_df, request.message
+        )
 
-    if isinstance(result, dict) and 'answer' in result:
-        answer = result['answer']
-    elif isinstance(result, str):
-        answer = result
-    else:
-        answer = "Analysis completed. Check the visualization for details."
+        # Extract answer from result
+        if isinstance(result, dict) and 'answer' in result:
+            answer = result['answer']
+        elif isinstance(result, str):
+            answer = result
+        else:
+            answer = "Analysis completed. Check the visualization for details."
 
-    chat_history.append({'role': 'bot', 'content': answer})
-    response_history = [ChatMessage(**msg) for msg in chat_history]
+        # Build response chat history
+        chat_history.append({'role': 'bot', 'content': answer})
+        response_history = [ChatMessage(**msg) for msg in chat_history]
 
-    return ChatResponse(
-        response=answer,
-        chat_history=response_history,
-        visualization=convert_ndarrays(visualization)
-    )
+        return ChatResponse(
+            response=answer,
+            chat_history=response_history,
+            visualization=convert_ndarrays(visualization)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in chat_with_data: {e}")
+        # Return a fallback response instead of raising an error
+        error_message = "I encountered an error processing your request. Please try rephrasing your question."
+        
+        chat_history = [msg.model_dump() for msg in request.chat_history]
+        chat_history.append({'role': 'user', 'content': request.message})
+        chat_history.append({'role': 'bot', 'content': error_message})
+        response_history = [ChatMessage(**msg) for msg in chat_history]
+        
+        return ChatResponse(
+            response=error_message,
+            chat_history=response_history,
+            visualization=None
+        )
 
 if __name__ == "__main__":
     import uvicorn
