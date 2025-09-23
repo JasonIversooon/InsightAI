@@ -70,9 +70,9 @@ class DataProcessor:
     
     def _parse_response(self, response: str) -> Tuple[str, Optional[str]]:
         """
-        Parse LLM response to extract code and answer
+        Parse LLM response to extract code and answer with improved robustness
         """
-        print(f"DEBUG: Parsing response: {response[:200]}...")
+        print(f"DEBUG: Parsing response: {response[:500]}...")
         
         # Clean the response
         cleaned_response = response.strip()
@@ -90,7 +90,7 @@ class DataProcessor:
                     if cleaned_response.startswith(('json', 'python')):
                         lines = cleaned_response.split('\n')
                         cleaned_response = '\n'.join(lines[1:])
-            
+        
             # Try direct JSON parse
             data = json.loads(cleaned_response)
             code = data.get("code", "")
@@ -101,6 +101,33 @@ class DataProcessor:
             
         except json.JSONDecodeError as e:
             print(f"DEBUG: JSON decode failed: {e}")
+            
+            # Fallback: Try to extract JSON using regex
+            import re
+            json_pattern = r'\{[^{}]*"tool"[^{}]*"code"[^{}]*"answer"[^{}]*\}'
+            matches = re.findall(json_pattern, cleaned_response, re.DOTALL)
+            
+            if matches:
+                try:
+                    data = json.loads(matches[0])
+                    code = data.get("code", "")
+                    answer = data.get("answer", "")
+                    print(f"DEBUG: Regex extraction successful. Code length: {len(code)}")
+                    return code, answer
+                except:
+                    pass
+            
+            # Another fallback: look for code between quotes after "code":
+            code_match = re.search(r'"code":\s*"([^"]+)"', cleaned_response)
+            answer_match = re.search(r'"answer":\s*"([^"]+)"', cleaned_response)
+            
+            if code_match:
+                code = code_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+                answer = answer_match.group(1) if answer_match else "Analysis completed"
+                print(f"DEBUG: Fallback extraction successful. Code length: {len(code)}")
+                return code, answer
+            
+            print(f"DEBUG: All parsing methods failed")
             return "", None
     
     def _execute_code(self, code: str, df: pd.DataFrame) -> Tuple[Any, Optional[Dict]]:

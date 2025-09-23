@@ -92,9 +92,9 @@ async def generate_response(question, data_context, chat_history, chart_hint=Non
     chat_completion = await client.chat.completions.create(
         messages=chat_messages,
         model=MODEL_NAME,
-        temperature=0.0,   # lower for determinism
-        max_tokens=900,
-        top_p=1.0,
+        temperature=0.1,   # lower for determinism
+        max_tokens=1200,
+        top_p=0.9,
     )
     return chat_completion.choices[0].message.content.strip()
 
