@@ -20,7 +20,7 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
     onChatSending(true);
 
     try {
-      const response = await axios.post('http://192.168.0.110:8080/api/chat', {
+      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/chat`, {
         message: userMessage,
         chat_history: chatHistory
       });
