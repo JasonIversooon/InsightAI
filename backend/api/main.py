@@ -178,7 +178,7 @@ async def chat_with_data(request: ChatRequest):
         bot_response = ask_llm(request.message, current_context, chat_history, chart_hint=chart_hint)
         
         # Debug: Log the raw LLM response
-        logger.info(f"Raw LLM response: {bot_response}")
+        #logger.info(f"Raw LLM response: {bot_response}")
 
         # Process the LLM response
         result, visualization = data_processor.process_llm_response(

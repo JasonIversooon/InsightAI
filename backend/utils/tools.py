@@ -213,20 +213,20 @@ def run_user_code(code, df, local_vars=None):
     sys.stdout = captured_output = StringIO()
     
     try:
-        print(f"Executing: {code}")  # Debug print
+        # print(f"Executing: {code}")  # Debug print
         
         # Try to evaluate as expression first
         try:
             result = eval(code, safe_globals, local_vars)
             if result is not None:
                 local_vars['result'] = result
-                print(f"Eval result: {type(result)} - {result}")  # Debug print
+                #print(f"Eval result: {type(result)} - {result}")  # Debug print
                 return local_vars
         except SyntaxError:
             # If eval fails, try exec
-            print(f"Eval failed, trying exec...")  # Debug print
+            # print(f"Eval failed, trying exec...")  # Debug print
             exec(code, safe_globals, local_vars)
-            print(f"Local vars after exec: {list(local_vars.keys())}")  # Debug print
+            # print(f"Local vars after exec: {list(local_vars.keys())}")  # Debug print
             return local_vars
             
     except Exception as e:

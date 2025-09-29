@@ -37,7 +37,7 @@ class DataProcessor:
             Tuple of (result, visualization_dict)
         """
         try:
-            logger.info(f"Processing LLM response: {llm_response[:200]}...")
+            # logger.info(f"Processing LLM response: {llm_response[:200]}...")
             
             # Parse the response to extract code
             code, answer = self._parse_response(llm_response)
@@ -48,12 +48,12 @@ class DataProcessor:
                     'answer': "No code was generated for your query. Please try rephrasing your question."
                 }, None
 
-            logger.info(f"Extracted code length: {len(code)}")
-            logger.info(f"Code preview: {code[:200]}...")
+            # logger.info(f"Extracted code length: {len(code)}")
+            # logger.info(f"Code preview: {code[:200]}...")
             
             # Execute the code
             result, visualization = self._execute_code(code, df)
-            logger.info(f"Code execution completed. Result: {result}")
+            # logger.info(f"Code execution completed. Result: {result}")
             
             # Return the result with answer
             if answer:
@@ -72,7 +72,7 @@ class DataProcessor:
         """
         Parse LLM response to extract code and answer with improved robustness
         """
-        print(f"DEBUG: Parsing response: {response[:500]}...")
+        # print(f"DEBUG: Parsing response: {response[:500]}...")
         
         # Clean the response
         cleaned_response = response.strip()
@@ -96,7 +96,7 @@ class DataProcessor:
             code = data.get("code", "")
             answer = data.get("answer", "")
             
-            print(f"DEBUG: Successfully parsed JSON. Code length: {len(code)}")
+            # print(f"DEBUG: Successfully parsed JSON. Code length: {len(code)}")
             return code, answer
             
         except json.JSONDecodeError as e:
@@ -112,7 +112,7 @@ class DataProcessor:
                     data = json.loads(matches[0])
                     code = data.get("code", "")
                     answer = data.get("answer", "")
-                    print(f"DEBUG: Regex extraction successful. Code length: {len(code)}")
+                    #print(f"DEBUG: Regex extraction successful. Code length: {len(code)}")
                     return code, answer
                 except:
                     pass
@@ -135,9 +135,9 @@ class DataProcessor:
         Execute the extracted code safely with comprehensive logging
         """
         try:
-            logger.info(f"Starting code execution...")
-            logger.info(f"DataFrame shape: {df.shape}")
-            logger.info(f"DataFrame columns: {df.columns.tolist()}")
+            # logger.info(f"Starting code execution...")
+            # logger.info(f"DataFrame shape: {df.shape}")
+            # logger.info(f"DataFrame columns: {df.columns.tolist()}")
             
             # Capture print statements
             old_stdout = sys.stdout
@@ -154,7 +154,7 @@ class DataProcessor:
                 'print': print  # Ensure print works
             }
             
-            logger.info(f"Executing code: {code}")
+            # logger.info(f"Executing code: {code}")
             
             # Execute the code
             exec(code, namespace)
@@ -163,21 +163,21 @@ class DataProcessor:
             sys.stdout = old_stdout
             output = captured_output.getvalue()
             
-            logger.info(f"Code execution output: {output}")
+            # logger.info(f"Code execution output: {output}")
             
             # Get the result
             result = namespace.get('result', 'Analysis completed')
             fig = namespace.get('fig', None)
             
-            logger.info(f"Result from namespace: {result}")
-            logger.info(f"Figure object: {fig is not None}")
+            # logger.info(f"Result from namespace: {result}")
+            # logger.info(f"Figure object: {fig is not None}")
             
             # Convert Plotly figure to dict if present
             visualization = None
             if fig is not None:
                 try:
                     visualization = fig.to_dict()
-                    logger.info("Visualization created successfully")
+                    # logger.info("Visualization created successfully")
                 except Exception as e:
                     logger.error(f"Error converting visualization: {e}")
             
