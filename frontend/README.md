@@ -1,70 +1,99 @@
-# Getting Started with Create React App
+# InsightAI Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This is the React frontend for InsightAI, providing a chat-based interface for uploading data, asking questions, and visualizing results.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- CSV file upload with drag-and-drop
+- Data preview and fullscreen table view
+- Chat interface for natural language queries
+- AI-generated charts and graphs (Plotly.js)
+- Responsive and modern UI
 
-### `npm start`
+## Requirements
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- Node.js 16+
+- npm
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Setup
 
-### `npm test`
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+2. **Configure API URL:**
+   - Edit [.env](http://_vscodecontentref_/1) to set the backend API base URL:
+     ```
+     REACT_APP_API_BASE_URL=http://localhost:8080
+     ```
 
-### `npm run build`
+3. **Run the development server:**
+   ```bash
+   npm start
+   ```
+   - Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Build
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+npm run build
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Testing
 
-### `npm run eject`
+```bash
+npm test
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+---
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+#### 3. Overall Project README (`/README.md`)
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+````markdown
+# InsightAI
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+InsightAI is an AI-powered data analyst that lets you upload CSV files, chat about your data in natural language, and receive instant visualizations and insights.
 
-## Learn More
+## Project Structure
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```
+insightAI/
+├── backend/   # FastAPI backend (Python)
+├── frontend/  # React frontend (JavaScript)
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Quick Start
 
-### Code Splitting
+### 1. Backend
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r [requirements.txt](http://_vscodecontentref_/2)
+# Set your GROQ_API_KEY in .env
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8080
+```
 
-### Analyzing the Bundle Size
+### 2. Frontend
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+```bash
+cd frontend
+npm install
+npm start
+# Open http://localhost:3000
+```
 
-### Making a Progressive Web App
+## Features
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- Upload CSV files and preview data
+- Chat with your data using natural language
+- AI-generated Python code and visualizations
+- Interactive charts and tables
 
-### Advanced Configuration
+## Configuration
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+- **Backend:** Set your Groq API key in `backend/.env`
+- **Frontend:** Set backend API URL in `frontend/.env`
 
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
