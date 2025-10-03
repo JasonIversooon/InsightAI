@@ -12,18 +12,29 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
+  function getSessionId() {
+    let id = localStorage.getItem("insightai_session");
+    if (!id) {
+      id = crypto?.randomUUID?.() || (Date.now().toString(36) + Math.random().toString(36).slice(2));
+      localStorage.setItem("insightai_session", id);
+    }
+    return id;
+  }
+
   async function sendMessageToServer(message, chatHistory = []) {
     const url = `${process.env.REACT_APP_API_BASE_URL}/api/chat`;
+    const sessionId = getSessionId();
     try {
-      const payload = {
-        message: String(message ?? ""),
-        chat_history: Array.isArray(chatHistory) ? chatHistory : [],
-      };
-
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Session-ID": sessionId
+        },
+        body: JSON.stringify({
+          message: String(message ?? ""),
+          chat_history: Array.isArray(chatHistory) ? chatHistory : [],
+        }),
       });
 
       const text = await res.text();

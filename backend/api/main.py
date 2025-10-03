@@ -8,13 +8,15 @@ import logging
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 import io
 from typing import List, Dict, Any
 import numpy as np
+import os
+import redis
 
 # Import optimized modules
 from agents.agent import ask_llm
@@ -60,6 +62,34 @@ data_processor = DataProcessor()
 # Global state (use proper state management in production)
 current_df = None
 current_context = None
+
+# Redis client (optional fallback to None)
+REDIS_URL = os.getenv("REDIS_URL")  # set this in Render env
+redis_client = None
+if REDIS_URL:
+    redis_client = redis.from_url(REDIS_URL)
+
+# TTL in seconds for temporary datasets (e.g., 24 hours)
+DATA_TTL_SECONDS = int(os.getenv("DATA_TTL_SECONDS", 60 * 60 * 24))
+
+# Helper functions
+def save_df_to_redis(session_id: str, df: pd.DataFrame):
+    if not redis_client or not session_id:
+        return False
+    buf = io.BytesIO()
+    df.to_pickle(buf)
+    buf.seek(0)
+    redis_client.set(f"dataset:{session_id}", buf.read(), ex=DATA_TTL_SECONDS)
+    return True
+
+def load_df_from_redis(session_id: str):
+    if not redis_client or not session_id:
+        return None
+    key = f"dataset:{session_id}"
+    data = redis_client.get(key)
+    if not data:
+        return None
+    return pd.read_pickle(io.BytesIO(data))
 
 def convert_ndarrays(obj):
     if isinstance(obj, np.ndarray):
@@ -113,7 +143,7 @@ async def health_check():
     return {"status": "healthy", "version": "1.0.0"}
 
 @app.post("/api/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(file: UploadFile = File(...), x_session_id: str | None = Header(None)):
     """Handle CSV file upload and processing"""
     global current_df, current_context
     
@@ -141,7 +171,15 @@ async def upload_csv(file: UploadFile = File(...)):
         current_df = df
         current_context = generate_data_context(df)
         data_processor.reset_context()
-        
+
+        # persist to redis so other workers can load
+        if x_session_id and redis_client:
+            try:
+                save_df_to_redis(x_session_id, current_df)
+                logger.info("Saved dataframe to redis for session %s", x_session_id)
+            except Exception as e:
+                logger.warning("Failed to save dataframe to redis: %s", e)
+
         # Prepare response data
         preview_limit = 100  # keep responses small
         preview_data = df.head(preview_limit).to_dict('records')
@@ -162,10 +200,19 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_with_data(request: ChatRequest):
+async def chat_with_data(request: ChatRequest, x_session_id: str | None = Header(None)):
     """Main chat endpoint with improved error handling"""
     global current_df, current_context
-    
+
+    # try load persisted dataset per-session if in-memory is None
+    if current_df is None and x_session_id:
+        loaded = load_df_from_redis(x_session_id)
+        if loaded is not None:
+            current_df = loaded
+            current_context = generate_data_context(current_df)
+            data_processor.reset_context()
+            logger.info("Loaded dataframe from redis for session %s", x_session_id)
+
     try:
         if current_df is None:
             raise HTTPException(status_code=400, detail="No dataset uploaded yet.")

@@ -3,6 +3,15 @@ import React, { useState } from 'react';
 import '../styles/DataUpload.css';
 import axios from 'axios';
 
+function getSessionId() {
+  let id = localStorage.getItem("insightai_session");
+  if (!id) {
+    id = crypto?.randomUUID?.() || (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    localStorage.setItem("insightai_session", id);
+  }
+  return id;
+}
+
 const DataUpload = ({ onDataUpload }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
@@ -18,15 +27,21 @@ const DataUpload = ({ onDataUpload }) => {
 
     const formData = new FormData();
     formData.append('file', file);
+    const sessionId = getSessionId();
 
     try {
       console.log('Sending request to backend...');
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // 30 second timeout
-      });
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_BASE_URL}/api/upload`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'X-Session-ID': sessionId,
+          },
+          timeout: 30000, // 30 second timeout
+        }
+      );
 
       console.log('Full response:', response);
       console.log('Response data:', response.data);

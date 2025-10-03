@@ -20,3 +20,6 @@ pydantic==2.5.0
 
 # Development
 pytest==7.4.3
+
+# Storage and caching
+redis==5.0.10
