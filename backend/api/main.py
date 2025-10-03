@@ -30,7 +30,10 @@ app = FastAPI(title="InsightAI API", version="1.0.0")
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://insightai-frontend-759t.onrender.com/"],  # React dev server
+    allow_origins=[
+        "https://insightai-frontend-759t.onrender.com",
+        # add any other origins you use (optional)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
