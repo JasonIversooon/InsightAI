@@ -12,6 +12,38 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory]);
 
+  async function sendMessageToServer(message, chatHistory = []) {
+    const url = `${process.env.REACT_APP_API_BASE_URL}/api/chat`;
+    try {
+      const payload = {
+        message: String(message ?? ""),
+        chat_history: Array.isArray(chatHistory) ? chatHistory : [],
+      };
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      // Try to parse JSON safely
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+
+      if (!res.ok) {
+        console.error("Server returned error:", res.status, data);
+        // throw a helpful Error so UI can show message
+        throw new Error((data && data.error) || (data && data.detail) || `Server ${res.status}`);
+      }
+
+      return data;
+    } catch (err) {
+      console.error("Error sending message to server:", err);
+      throw err;
+    }
+  }
+
   const sendMessage = async () => {
     if (!message.trim() || !hasData || isLoading) return;
 
@@ -20,12 +52,9 @@ const ChatInterface = ({ chatHistory, onChatResponse, onChatSending, hasData, is
     onChatSending(true);
 
     try {
-      const response = await axios.post(`${process.env.REACT_APP_API_BASE_URL}/api/chat`, {
-        message: userMessage,
-        chat_history: chatHistory
-      });
+      const response = await sendMessageToServer(userMessage, chatHistory);
 
-      onChatResponse(response.data);
+      onChatResponse(response);
     } catch (error) {
       console.error('Error sending message:', error);
       onChatResponse({
